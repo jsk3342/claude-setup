@@ -125,8 +125,13 @@ if command -v claude &>/dev/null; then
   skip "Claude Code"
 else
   echo "  Claude Code를 설치합니다..."
-  npm install -g @anthropic-ai/claude-code
-  ok "Claude Code 설치 완료"
+  if npm install -g @anthropic-ai/claude-code 2>/dev/null; then
+    ok "Claude Code 설치 완료"
+  else
+    echo "  권한이 필요합니다. 비밀번호를 입력해주세요."
+    sudo npm install -g @anthropic-ai/claude-code
+    ok "Claude Code 설치 완료"
+  fi
 fi
 
 # ── 완료 ──
