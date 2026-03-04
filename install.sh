@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 step=0
-total=5
+total=6
 
 progress() {
   step=$((step + 1))
@@ -118,20 +118,27 @@ else
   ok "$(python3 --version) 설치 완료"
 fi
 
-# ── 5. Claude Code ──
+# ── 5. Git ──
+progress "Git"
+
+if command -v git &>/dev/null; then
+  git_ver=$(git --version)
+  skip "$git_ver"
+else
+  echo "  Git을 설치합니다..."
+  brew install git
+  ok "$(git --version) 설치 완료"
+fi
+
+# ── 6. Claude Code ──
 progress "Claude Code"
 
 if command -v claude &>/dev/null; then
   skip "Claude Code"
 else
   echo "  Claude Code를 설치합니다..."
-  if npm install -g @anthropic-ai/claude-code 2>/dev/null; then
-    ok "Claude Code 설치 완료"
-  else
-    echo "  권한이 필요합니다. 비밀번호를 입력해주세요."
-    sudo npm install -g @anthropic-ai/claude-code
-    ok "Claude Code 설치 완료"
-  fi
+  brew install --cask claude-code
+  ok "Claude Code 설치 완료"
 fi
 
 # ── 완료 ──
@@ -144,6 +151,7 @@ echo -e "  설치된 항목:"
 echo -e "  ${GREEN}✓${NC} Homebrew  $(brew --version 2>/dev/null | head -1)"
 echo -e "  ${GREEN}✓${NC} Node.js   $(node -v 2>/dev/null)"
 echo -e "  ${GREEN}✓${NC} Python    $(python3 --version 2>&1)"
+echo -e "  ${GREEN}✓${NC} Git       $(git --version 2>/dev/null)"
 echo -e "  ${GREEN}✓${NC} Claude Code"
 echo ""
 echo -e "  ${BOLD}다음 단계:${NC}"

@@ -8,7 +8,7 @@
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/jsk3342/claude-setup/main/install.sh)"
 ```
 
-설치 항목: Xcode CLT → Homebrew → Node.js → Python 3 → Claude Code
+설치 항목: Xcode CLT → Homebrew → Node.js → Python 3 → Git → Claude Code
 
 ## Windows
 
@@ -18,15 +18,16 @@ PowerShell을 열고:
 irm https://raw.githubusercontent.com/jsk3342/claude-setup/main/install.ps1 | iex
 ```
 
-설치 항목: Scoop → Node.js → Python 3 → Claude Code
+설치 항목: Scoop → Node.js → Python 3 → Git → Claude Code
 
 ## 뭐가 설치되나요?
 
 | 도구 | 용도 |
 |------|------|
 | Homebrew / Scoop | 패키지 매니저 (앱스토어 같은 것) |
-| Node.js | Claude Code 실행에 필요 |
+| Node.js | JavaScript 런타임 (프로젝트 개발용) |
 | Python 3 | 스크립트, 자동화에 사용 |
+| Git | 버전 관리 |
 | Claude Code | AI와 대화하며 일하는 터미널 도구 |
 
 - 이미 설치된 항목은 자동으로 스킵합니다

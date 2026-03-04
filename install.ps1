@@ -37,15 +37,16 @@ function Test-Command {
     return $?
 }
 
-# ── 관리자 권한 확인 ──
-$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+function Refresh-Path {
+    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+}
 
 Write-Host ""
 Write-Host "🚀 클로드 코드 올인원 설치를 시작합니다" -ForegroundColor White
 Write-Host "   Windows $([System.Environment]::OSVersion.Version)" -ForegroundColor Gray
 Write-Host ""
 
-$total = 4
+$total = 5
 $step = 0
 
 # ── 1. Scoop (패키지 매니저) ──
@@ -63,17 +64,12 @@ if (Test-Command "scoop") {
     # Scoop 설치
     Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
 
+    Refresh-Path
+
     if (Test-Command "scoop") {
         Write-Ok "Scoop 설치 완료"
     } else {
-        # PATH 새로고침
-        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
-
-        if (Test-Command "scoop") {
-            Write-Ok "Scoop 설치 완료"
-        } else {
-            Write-Fail "Scoop 설치에 실패했습니다. PowerShell을 재시작한 뒤 다시 시도해주세요."
-        }
+        Write-Fail "Scoop 설치에 실패했습니다. PowerShell을 재시작한 뒤 다시 시도해주세요."
     }
 }
 
@@ -88,8 +84,7 @@ if (Test-Command "node") {
     Write-Host "  Node.js를 설치합니다..."
     scoop install nodejs
 
-    # PATH 새로고침
-    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+    Refresh-Path
 
     $nodeVer = node -v
     Write-Ok "Node.js $nodeVer 설치 완료"
@@ -109,14 +104,30 @@ if (Test-Command "python") {
     Write-Host "  Python 3를 설치합니다..."
     scoop install python
 
-    # PATH 새로고침
-    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+    Refresh-Path
 
     $pyVer = python --version 2>&1
     Write-Ok "$pyVer 설치 완료"
 }
 
-# ── 4. Claude Code ──
+# ── 4. Git ──
+$step++
+Write-Step -Num $step -Total $total -Message "Git"
+
+if (Test-Command "git") {
+    $gitVer = git --version
+    Write-Skip "$gitVer"
+} else {
+    Write-Host "  Git을 설치합니다..."
+    scoop install git
+
+    Refresh-Path
+
+    $gitVer = git --version
+    Write-Ok "$gitVer 설치 완료"
+}
+
+# ── 5. Claude Code ──
 $step++
 Write-Step -Num $step -Total $total -Message "Claude Code"
 
@@ -124,10 +135,16 @@ if (Test-Command "claude") {
     Write-Skip "Claude Code"
 } else {
     Write-Host "  Claude Code를 설치합니다..."
-    npm install -g @anthropic-ai/claude-code
 
-    # PATH 새로고침
-    $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+    # winget으로 설치 (Windows 10+ 기본 내장)
+    if (Test-Command "winget") {
+        winget install --id Anthropic.ClaudeCode -e --accept-source-agreements --accept-package-agreements
+    } else {
+        # winget 없으면 npm 폴백
+        npm install -g @anthropic-ai/claude-code
+    }
+
+    Refresh-Path
 
     Write-Ok "Claude Code 설치 완료"
 }
@@ -143,6 +160,7 @@ Write-Host "  설치된 항목:" -ForegroundColor White
 if (Test-Command "scoop") { Write-Host "  ✓ Scoop" -ForegroundColor Green }
 if (Test-Command "node") { Write-Host "  ✓ Node.js   $(node -v)" -ForegroundColor Green }
 if (Test-Command "python") { Write-Host "  ✓ Python    $(python --version 2>&1)" -ForegroundColor Green }
+if (Test-Command "git") { Write-Host "  ✓ Git       $(git --version)" -ForegroundColor Green }
 if (Test-Command "claude") { Write-Host "  ✓ Claude Code" -ForegroundColor Green }
 
 Write-Host ""
