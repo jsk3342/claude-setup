@@ -3,6 +3,13 @@
 # 사용법: irm https://raw.githubusercontent.com/jsk3342/claude-setup/main/uninstall-win.ps1 | iex
 # ============================================================
 
+# 관리자 권한 체크 & 자동 재실행
+if (-NOT ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "  관리자 권한으로 재실행합니다..." -ForegroundColor Yellow
+    Start-Process PowerShell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/jsk3342/claude-setup/main/uninstall-win.ps1 | iex`""
+    exit
+}
+
 $ErrorActionPreference = "SilentlyContinue"
 
 Write-Host ""
@@ -27,13 +34,18 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
     Write-Host "  Node.js 제거..." -ForegroundColor Yellow
     winget uninstall OpenJS.NodeJS --silent 2>$null
     winget uninstall OpenJS.NodeJS.LTS --silent 2>$null
+    winget uninstall OpenJS.NodeJS.22 --silent 2>$null
+    winget uninstall OpenJS.NodeJS.20 --silent 2>$null
+    winget uninstall OpenJS.NodeJS.18 --silent 2>$null
 
     Write-Host "  Python 제거..." -ForegroundColor Yellow
     winget uninstall Python.Python.3.12 --silent 2>$null
     winget uninstall Python.Python.3.13 --silent 2>$null
+    winget uninstall Python.Python.3.11 --silent 2>$null
 
     Write-Host "  Git 제거..." -ForegroundColor Yellow
     winget uninstall Git.Git --silent 2>$null
+    winget uninstall Git.Git.2 --silent 2>$null
 }
 
 # PATH 새로고침
