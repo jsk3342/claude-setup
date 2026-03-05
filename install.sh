@@ -43,6 +43,12 @@ echo -e "${BOLD}🚀 클로드 코드 올인원 설치를 시작합니다${NC}"
 echo -e "   macOS $(sw_vers -productVersion) | $(uname -m)"
 echo ""
 
+# ── sudo 미리 획득 (이후 비밀번호 재입력 없음) ──
+echo -e "  설치에 관리자 권한이 필요합니다."
+sudo -v
+# sudo 타임아웃 방지 (백그라운드에서 갱신)
+while true; do sudo -n true; sleep 50; kill -0 "$$" || exit; done 2>/dev/null &
+
 # ── 1. Xcode Command Line Tools ──
 progress "Xcode Command Line Tools"
 
