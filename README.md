@@ -33,3 +33,13 @@ irm https://raw.githubusercontent.com/jsk3342/claude-setup/main/install.ps1 | ie
 - 이미 설치된 항목은 자동으로 스킵합니다
 - Apple Silicon(M1/M2/M3/M4) 자동 대응
 - 설치 중 진행 상황이 표시됩니다
+
+## Windows 초기화 (클린 테스트용)
+
+기존 설치를 전부 제거하고 클린 상태로 만듭니다:
+
+```powershell
+irm https://raw.githubusercontent.com/jsk3342/claude-setup/main/uninstall-win.ps1 | iex
+```
+
+PowerShell 재시작 후 위의 설치 명령어를 다시 실행하면 됩니다.
