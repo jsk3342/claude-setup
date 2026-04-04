@@ -95,10 +95,10 @@ $step++
 Write-Step -Num $step -Total $total -Message "Python 3"
 
 if (Test-Command "python") {
-    $pyVer = python --version 2>&1
+    $pyVer = & { $ErrorActionPreference = 'SilentlyContinue'; (python --version 2>&1) -join '' }
     Write-Skip "$pyVer"
 } elseif (Test-Command "python3") {
-    $pyVer = python3 --version 2>&1
+    $pyVer = & { $ErrorActionPreference = 'SilentlyContinue'; (python3 --version 2>&1) -join '' }
     Write-Skip "$pyVer"
 } else {
     Write-Host "  Python 3를 설치합니다..."
@@ -106,7 +106,7 @@ if (Test-Command "python") {
 
     Refresh-Path
 
-    $pyVer = python --version 2>&1
+    $pyVer = & { $ErrorActionPreference = 'SilentlyContinue'; (python --version 2>&1) -join '' }
     Write-Ok "$pyVer 설치 완료"
 }
 
