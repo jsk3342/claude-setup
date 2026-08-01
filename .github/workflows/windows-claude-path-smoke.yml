@@ -1,0 +1,155 @@
+name: Windows Claude PATH smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_destructive_reset:
+        description: Run uninstall-win.ps1 last on the disposable runner
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-claude-path-smoke
+  cancel-in-progress: false
+
+jobs:
+  windows-claude-path:
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Claude Code and rerun installer
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # This smoke targets the Claude/PATH regression. windows-latest already
+          # provides Node.js, Python, and Git; a scoped shim avoids testing Scoop's
+          # administrator-specific bootstrap behavior on the hosted runner.
+          $scoopShimDir = Join-Path $env:RUNNER_TEMP "claude-path-smoke"
+          $scoopShim = Join-Path $scoopShimDir "scoop.cmd"
+          New-Item -ItemType Directory -Path $scoopShimDir -Force | Out-Null
+          Set-Content -LiteralPath $scoopShim -Encoding ASCII -Value "@echo off`r`nexit /b 0"
+
+          # Hosted-runner toolcache entries exist only in the current process.
+          # Persist their directories so Refresh-Path models a normal user install
+          # and the second installer run can verify the same prerequisites.
+          $toolDirs = foreach ($toolName in @("node", "python", "git")) {
+              $tool = Get-Command $toolName -CommandType Application -ErrorAction Stop
+              Split-Path $tool.Path -Parent
+          }
+          $currentUserPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+          $currentUserEntries = @($currentUserPath -split ";" | Where-Object { $_ })
+          $persistedEntries = @($toolDirs + $currentUserEntries | Select-Object -Unique)
+          [System.Environment]::SetEnvironmentVariable("PATH", ($persistedEntries -join ";"), "User")
+
+          # Match the README command path (`irm ... | iex`). Windows PowerShell
+          # 5.1 can misread a checked-out UTF-8 script without a BOM, while
+          # Invoke-RestMethod decodes GitHub's HTTP response before execution.
+          $installerUrl = "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1"
+          $installer = Invoke-RestMethod -Uri $installerUrl -ErrorAction Stop
+
+          $env:PATH = "$scoopShimDir;$env:PATH"
+          Invoke-Expression $installer
+
+          # install.ps1 refreshes PATH, so restore only the test shim before the
+          # second run. The second run must recognize and verify the native install.
+          $env:PATH = "$scoopShimDir;$env:PATH"
+          Invoke-Expression $installer
+
+      - name: Verify a newly opened PowerShell can resolve Claude
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          function Get-NormalizedPath {
+              param([string]$Path)
+              $trimChars = [char[]]@('\', '/')
+              return [System.IO.Path]::GetFullPath($Path).TrimEnd($trimChars)
+          }
+
+          $expectedDir = Join-Path $env:USERPROFILE ".local\bin"
+          $expectedExe = Join-Path $expectedDir "claude.exe"
+          if (!(Test-Path -LiteralPath $expectedExe)) {
+              throw "Native Claude executable was not created: $expectedExe"
+          }
+
+          $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+          $machinePath = [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+          $userEntries = @($userPath -split ";" | Where-Object { $_ })
+          if ($userEntries.Count -eq 0) {
+              throw "The persisted User PATH is empty."
+          }
+
+          $firstUserEntry = Get-NormalizedPath $userEntries[0]
+          $normalizedExpectedDir = Get-NormalizedPath $expectedDir
+          if (![string]::Equals(
+              $firstUserEntry,
+              $normalizedExpectedDir,
+              [System.StringComparison]::OrdinalIgnoreCase
+          )) {
+              throw "Claude's native directory is not first in the persisted User PATH."
+          }
+
+          # A newly opened terminal receives the persisted User + Machine PATH.
+          # Rebuild it here instead of trusting this workflow process's inherited PATH.
+          $env:PATH = @($userPath, $machinePath) -join ";"
+          $resolved = Get-Command claude -CommandType Application -ErrorAction Stop
+          $resolvedPath = Get-NormalizedPath $resolved.Path
+          $normalizedExpectedExe = Get-NormalizedPath $expectedExe
+          if (![string]::Equals(
+              $resolvedPath,
+              $normalizedExpectedExe,
+              [System.StringComparison]::OrdinalIgnoreCase
+          )) {
+              throw "Fresh PowerShell resolved claude to '$resolvedPath', not '$normalizedExpectedExe'."
+          }
+
+          $version = (& $resolved.Path --version 2>&1) -join ""
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '\(Claude Code\)') {
+              throw "Fresh PowerShell could not execute Claude Code: $version"
+          }
+
+          Write-Host "Fresh PowerShell resolved $resolvedPath"
+          Write-Host $version
+
+      - name: Run destructive reset on disposable runner
+        if: ${{ inputs.run_destructive_reset }}
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $resetUrl = "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/uninstall-win.ps1"
+          $resetScript = Invoke-RestMethod -Uri $resetUrl -ErrorAction Stop
+          Invoke-Expression $resetScript
+
+          $nativeDir = Join-Path $env:USERPROFILE ".local\bin"
+          $nativeExe = Join-Path $nativeDir "claude.exe"
+          if (Test-Path -LiteralPath $nativeExe) {
+              throw "Native Claude executable remains after reset: $nativeExe"
+          }
+
+          if (!(Test-Path -LiteralPath $nativeDir)) {
+              $userPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+              $pathEntries = @($userPath -split ";" | Where-Object { $_ })
+              foreach ($entry in $pathEntries) {
+                  $trimChars = [char[]]@('\', '/')
+                  $normalizedEntry = [System.IO.Path]::GetFullPath($entry).TrimEnd($trimChars)
+                  $normalizedNativeDir = [System.IO.Path]::GetFullPath($nativeDir).TrimEnd($trimChars)
+                  if ([string]::Equals(
+                      $normalizedEntry,
+                      $normalizedNativeDir,
+                      [System.StringComparison]::OrdinalIgnoreCase
+                  )) {
+                      throw "Removed native directory remains in the persisted User PATH."
+                  }
+              }
+          }
