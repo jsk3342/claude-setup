@@ -43,13 +43,19 @@ jobs:
           New-Item -ItemType Directory -Path $scoopShimDir -Force | Out-Null
           Set-Content -LiteralPath $scoopShim -Encoding ASCII -Value "@echo off`r`nexit /b 0"
 
+          # Match the README command path (`irm ... | iex`). Windows PowerShell
+          # 5.1 can misread a checked-out UTF-8 script without a BOM, while
+          # Invoke-RestMethod decodes GitHub's HTTP response before execution.
+          $installerUrl = "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1"
+          $installer = Invoke-RestMethod -Uri $installerUrl -ErrorAction Stop
+
           $env:PATH = "$scoopShimDir;$env:PATH"
-          & "$env:GITHUB_WORKSPACE\install.ps1"
+          Invoke-Expression $installer
 
           # install.ps1 refreshes PATH, so restore only the test shim before the
           # second run. The second run must recognize and verify the native install.
           $env:PATH = "$scoopShimDir;$env:PATH"
-          & "$env:GITHUB_WORKSPACE\install.ps1"
+          Invoke-Expression $installer
 
       - name: Verify a newly opened PowerShell can resolve Claude
         shell: powershell
@@ -112,7 +118,9 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          & "$env:GITHUB_WORKSPACE\uninstall-win.ps1"
+          $resetUrl = "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/uninstall-win.ps1"
+          $resetScript = Invoke-RestMethod -Uri $resetUrl -ErrorAction Stop
+          Invoke-Expression $resetScript
 
           $nativeDir = Join-Path $env:USERPROFILE ".local\bin"
           $nativeExe = Join-Path $nativeDir "claude.exe"
