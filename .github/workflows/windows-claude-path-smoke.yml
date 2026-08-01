@@ -1,9 +1,6 @@
 name: Windows Claude PATH smoke
 
 on:
-  push:
-    branches:
-      - verify/windows-claude-path-smoke
   workflow_dispatch:
     inputs:
       run_destructive_reset:
