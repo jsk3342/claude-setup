@@ -43,6 +43,18 @@ jobs:
           New-Item -ItemType Directory -Path $scoopShimDir -Force | Out-Null
           Set-Content -LiteralPath $scoopShim -Encoding ASCII -Value "@echo off`r`nexit /b 0"
 
+          # Hosted-runner toolcache entries exist only in the current process.
+          # Persist their directories so Refresh-Path models a normal user install
+          # and the second installer run can verify the same prerequisites.
+          $toolDirs = foreach ($toolName in @("node", "python", "git")) {
+              $tool = Get-Command $toolName -CommandType Application -ErrorAction Stop
+              Split-Path $tool.Path -Parent
+          }
+          $currentUserPath = [System.Environment]::GetEnvironmentVariable("PATH", "User")
+          $currentUserEntries = @($currentUserPath -split ";" | Where-Object { $_ })
+          $persistedEntries = @($toolDirs + $currentUserEntries | Select-Object -Unique)
+          [System.Environment]::SetEnvironmentVariable("PATH", ($persistedEntries -join ";"), "User")
+
           # Match the README command path (`irm ... | iex`). Windows PowerShell
           # 5.1 can misread a checked-out UTF-8 script without a BOM, while
           # Invoke-RestMethod decodes GitHub's HTTP response before execution.

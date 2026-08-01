@@ -37,6 +37,37 @@ function Test-Command {
     return $?
 }
 
+function Get-PythonVersion {
+    foreach ($candidate in @("python", "python3")) {
+        if (!(Test-Command $candidate)) {
+            continue
+        }
+
+        $check = & {
+            param([string]$Command)
+            $ErrorActionPreference = "SilentlyContinue"
+            try {
+                $output = (& $Command --version 2>&1) -join ""
+                $exitCode = $LASTEXITCODE
+            }
+            catch {
+                $output = $_.Exception.Message
+                $exitCode = 1
+            }
+            [PSCustomObject]@{
+                Output = $output
+                ExitCode = $exitCode
+            }
+        } $candidate
+
+        if ($check.ExitCode -eq 0 -and $check.Output -match '^Python\s+\d+(?:\.\d+)+') {
+            return $check.Output.Trim()
+        }
+    }
+
+    return $null
+}
+
 function Refresh-Path {
     $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
 }
@@ -177,11 +208,8 @@ if (Test-Command "node") {
 $step++
 Write-Step -Num $step -Total $total -Message "Python 3"
 
-if (Test-Command "python") {
-    $pyVer = & { $ErrorActionPreference = 'SilentlyContinue'; (python --version 2>&1) -join '' }
-    Write-Skip "$pyVer"
-} elseif (Test-Command "python3") {
-    $pyVer = & { $ErrorActionPreference = 'SilentlyContinue'; (python3 --version 2>&1) -join '' }
+$pyVer = Get-PythonVersion
+if ($null -ne $pyVer) {
     Write-Skip "$pyVer"
 } else {
     Write-Host "  Python 3를 설치합니다..."
@@ -189,7 +217,10 @@ if (Test-Command "python") {
 
     Refresh-Path
 
-    $pyVer = & { $ErrorActionPreference = 'SilentlyContinue'; (python --version 2>&1) -join '' }
+    $pyVer = Get-PythonVersion
+    if ($null -eq $pyVer) {
+        Write-Fail "Python 3 설치 후 실행 확인에 실패했습니다."
+    }
     Write-Ok "$pyVer 설치 완료"
 }
 
@@ -297,17 +328,17 @@ Write-Ok "Claude Code $claudeVer 설치 및 실행 확인"
 
 # ── 완료 ──
 Write-Host ""
+Write-Host "  설치된 항목:" -ForegroundColor White
+Write-Host "  ✓ Scoop" -ForegroundColor Green
+Write-Host "  ✓ Node.js   $nodeVer" -ForegroundColor Green
+Write-Host "  ✓ Python    $pyVer" -ForegroundColor Green
+Write-Host "  ✓ Git       $gitVer" -ForegroundColor Green
+Write-Host "  ✓ Claude Code $claudeVer" -ForegroundColor Green
+
+Write-Host ""
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
 Write-Host "  ✅ 설치가 모두 완료되었습니다!" -ForegroundColor Green
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
-Write-Host ""
-Write-Host "  설치된 항목:" -ForegroundColor White
-
-if (Test-Command "scoop") { Write-Host "  ✓ Scoop" -ForegroundColor Green }
-if (Test-Command "node") { Write-Host "  ✓ Node.js   $(node -v)" -ForegroundColor Green }
-if (Test-Command "python") { Write-Host "  ✓ Python    $(python --version 2>&1)" -ForegroundColor Green }
-if (Test-Command "git") { Write-Host "  ✓ Git       $(git --version)" -ForegroundColor Green }
-if (Test-Command "claude") { Write-Host "  ✓ Claude Code $claudeVer" -ForegroundColor Green }
 
 Write-Host ""
 Write-Host "  다음 단계:" -ForegroundColor White
