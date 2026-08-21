@@ -8,7 +8,7 @@
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/jsk3342/claude-setup/main/install.sh)"
 ```
 
-설치 항목: Claude Code → Xcode CLT → Homebrew → Node.js → Python 3 → Git
+설치 항목: Claude Code → Homebrew → Node.js → Python 3 → Git
 
 ## Windows
 
@@ -35,7 +35,10 @@ irm https://raw.githubusercontent.com/jsk3342/claude-setup/main/install.ps1 | ie
 - 설치 중 진행 상황이 표시됩니다
 - Claude Code 신규 설치는 Anthropic 공식 `stable` 설치기를 사용합니다
 - 실제 Claude Code 버전 확인과 새 터미널의 PATH 확인이 모두 통과해야 완료로 판정합니다
-- Node.js, Python 3, Git은 `Homebrew` 경로/설치 상태에 따라 선택적으로 설치될 수 있습니다.
+- Homebrew가 없는 macOS에서는 관리자 인증 후 공식 설치기를 사용합니다
+- Homebrew에 필요한 macOS 기본 개발 도구는 Homebrew 공식 설치기가 함께 처리합니다
+- Homebrew, Node.js, Python 3, Git 중 하나라도 실행 확인에 실패하면 전체 완료로 판정하지 않습니다
+- 개발 환경 일부가 실패해도 먼저 설치된 Claude Code는 사용할 수 있습니다
 
 ## 설치 후 `claude` 명령어가 안 보일 때
 

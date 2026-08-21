@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 step=0
-total=6
+total=5
 warnings=()
 
 progress() {
@@ -51,33 +51,50 @@ print_warning_summary() {
   fi
 
   echo ""
-  echo -e "${YELLOW}아래 항목은 Claude Code와 별개로 설치되지 않았습니다.${NC}"
+  echo -e "${YELLOW}기본 개발 환경에서 완료되지 않은 항목:${NC}"
   for item in "${warnings[@]}"; do
     echo "  - $item"
   done
 }
 
+get_brew_version() {
+  local version_output
+
+  if ! version_output=$(brew --version 2>&1); then
+    return 1
+  fi
+
+  printf '%s\n' "${version_output%%$'\n'*}"
+}
+
 ensure_brew_in_path() {
-  if command -v brew &>/dev/null; then
+  local brew_bin=""
+  local shellenv_output
+
+  if command -v brew &>/dev/null && get_brew_version &>/dev/null; then
     return 0
   fi
 
-  if [[ -f /opt/homebrew/bin/brew ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-    return 0
+  if [[ -x /opt/homebrew/bin/brew ]]; then
+    brew_bin=/opt/homebrew/bin/brew
+  elif [[ -x /usr/local/bin/brew ]]; then
+    brew_bin=/usr/local/bin/brew
+  else
+    return 1
   fi
 
-  if [[ -f /usr/local/bin/brew ]]; then
-    eval "$(/usr/local/bin/brew shellenv)"
-    return 0
+  if ! shellenv_output=$("$brew_bin" shellenv 2>/dev/null); then
+    return 1
   fi
 
-  return 1
+  eval "$shellenv_output"
+  command -v brew &>/dev/null && get_brew_version &>/dev/null
 }
 
 install_if_missing_node() {
-  if command -v node &>/dev/null; then
-    node_ver=$(node -v)
+  local node_ver
+
+  if command -v node &>/dev/null && node_ver=$(node -v 2>&1); then
     skip "Node.js $node_ver"
     return 0
   fi
@@ -88,16 +105,17 @@ install_if_missing_node() {
   fi
 
   echo "  Node.js를 설치합니다..."
-  if brew install node; then
-    ok "Node.js $(node -v) 설치 완료"
+  if brew install node && node_ver=$(node -v 2>&1); then
+    ok "Node.js $node_ver 설치 완료"
   else
-    warn "Node.js: Homebrew 설치 중 실패했습니다. (개발 도구 필요 시 수동으로 설치하세요)"
+    warn "Node.js: Homebrew 설치 또는 실행 확인에 실패했습니다."
   fi
 }
 
 install_if_missing_python() {
-  if command -v python3 &>/dev/null; then
-    py_ver=$(python3 --version 2>&1)
+  local py_ver
+
+  if command -v python3 &>/dev/null && py_ver=$(python3 --version 2>&1); then
     skip "$py_ver"
     return 0
   fi
@@ -108,16 +126,17 @@ install_if_missing_python() {
   fi
 
   echo "  Python 3를 설치합니다..."
-  if brew install python; then
-    ok "$(python3 --version) 설치 완료"
+  if brew install python && py_ver=$(python3 --version 2>&1); then
+    ok "$py_ver 설치 완료"
   else
-    warn "Python 3: Homebrew 설치 중 실패했습니다. (개발 도구 필요 시 수동으로 설치하세요)"
+    warn "Python 3: Homebrew 설치 또는 실행 확인에 실패했습니다."
   fi
 }
 
 install_if_missing_git() {
-  if command -v git &>/dev/null; then
-    git_ver=$(git --version)
+  local git_ver
+
+  if command -v git &>/dev/null && git_ver=$(git --version 2>&1); then
     skip "$git_ver"
     return 0
   fi
@@ -128,10 +147,10 @@ install_if_missing_git() {
   fi
 
   echo "  Git을 설치합니다..."
-  if brew install git; then
-    ok "$(git --version) 설치 완료"
+  if brew install git && git_ver=$(git --version 2>&1); then
+    ok "$git_ver 설치 완료"
   else
-    warn "Git: Homebrew 설치 중 실패했습니다. (개발 도구 필요 시 수동으로 설치하세요)"
+    warn "Git: Homebrew 설치 또는 실행 확인에 실패했습니다."
   fi
 }
 
@@ -145,6 +164,31 @@ ensure_config_line() {
   if ! grep -Fqx "$config_line" "$config_file"; then
     printf '\n%s\n' "$config_line" >> "$config_file"
   fi
+}
+
+persist_brew_path() {
+  local brew_bin="$1"
+  local shell_name
+  local path_line="eval \"\$($brew_bin shellenv)\""
+
+  shell_name=$(basename "${SHELL:-/bin/zsh}")
+
+  case "$shell_name" in
+    zsh)
+      ensure_config_line "${ZDOTDIR:-$HOME}/.zprofile" "$path_line" || return 1
+      ensure_config_line "${ZDOTDIR:-$HOME}/.zshrc" "$path_line" || return 1
+      ;;
+    bash)
+      ensure_config_line "$HOME/.bash_profile" "$path_line" || return 1
+      ensure_config_line "$HOME/.bashrc" "$path_line" || return 1
+      ;;
+    fish)
+      ensure_config_line "$HOME/.config/fish/config.fish" "$brew_bin shellenv | source" || return 1
+      ;;
+    *)
+      ensure_config_line "$HOME/.profile" "$path_line" || return 1
+      ;;
+  esac
 }
 
 persist_claude_path() {
@@ -280,69 +324,50 @@ fi
 
 ok "Claude Code $claude_ver 설치 및 실행 확인"
 
-# ── 2. Xcode Command Line Tools ──
-progress "Xcode Command Line Tools"
-
-if xcode-select -p &>/dev/null; then
-  skip "Xcode CLT"
-else
-  echo "  Xcode Command Line Tools를 설치합니다..."
-  echo "  (팝업이 뜨면 '설치'를 눌러주세요)"
-  xcode-select --install 2>/dev/null || true
-  wait_count=0
-
-  # 설치 완료 대기
-  echo "  설치가 완료될 때까지 기다립니다..."
-  until xcode-select -p &>/dev/null; do
-    sleep 5
-    wait_count=$((wait_count + 1))
-    if [[ "$wait_count" -ge 12 ]]; then
-      warn "Xcode CLT: 사용자 동작 대기 타임아웃. 나중에 수동 설치해 주세요."
-      break
-    fi
-  done
-
-  if xcode-select -p &>/dev/null; then
-    ok "Xcode CLT 설치 완료"
-  fi
-fi
-
-# ── 3. Homebrew (패키지 매니저) ──
+# ── 2. Homebrew (패키지 매니저) ──
 progress "Homebrew (패키지 매니저)"
 
-if command -v brew &>/dev/null; then
-  skip "Homebrew"
+if ensure_brew_in_path; then
+  brew_bin=$(command -v brew)
+  brew_ver=$(get_brew_version)
+  if persist_brew_path "$brew_bin"; then
+    skip "$brew_ver"
+  else
+    warn "Homebrew: 새 터미널용 PATH 등록에 실패했습니다."
+  fi
 else
   echo "  Homebrew를 설치합니다..."
-  if ! NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
-    warn "Homebrew: 설치 실패 (개발 도구 단계는 선택 설치로 넘어갑니다)"
-  else
-    # Apple Silicon PATH 등록
-    if [[ "$(uname -m)" == "arm64" ]]; then
-      echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zprofile"
-      eval "$(/opt/homebrew/bin/brew shellenv)"
-      ok "Homebrew 설치 + PATH 등록 (Apple Silicon)"
+  echo "  필요한 경우 Homebrew가 macOS 기본 개발 도구도 함께 설치합니다."
+  homebrew_install_error=""
+
+  if ! sudo -v; then
+    homebrew_install_error="Homebrew: 관리자 인증에 실패했습니다."
+  elif ! curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | NONINTERACTIVE=1 /bin/bash; then
+    homebrew_install_error="Homebrew: 공식 설치기 실행에 실패했습니다."
+  fi
+
+  if ensure_brew_in_path; then
+    brew_bin=$(command -v brew)
+    brew_ver=$(get_brew_version)
+    if persist_brew_path "$brew_bin"; then
+      ok "$brew_ver 설치 및 PATH 등록 완료"
     else
-      echo 'eval "$(/usr/local/bin/brew shellenv)"' >> "$HOME/.zprofile"
-      eval "$(/usr/local/bin/brew shellenv)"
-      ok "Homebrew 설치 + PATH 등록 (Intel)"
+      warn "Homebrew: 설치됐지만 새 터미널용 PATH 등록에 실패했습니다."
     fi
+  else
+    warn "${homebrew_install_error:-Homebrew: 설치 후 실행 확인에 실패했습니다.}"
   fi
 fi
 
-if ! ensure_brew_in_path; then
-  warn "Homebrew 경로 등록이 안 되어 있어 Node/Python/Git은 설치되지 않았습니다."
-fi
-
-# ── 4. Node.js ──
+# ── 3. Node.js ──
 progress "Node.js"
 install_if_missing_node
 
-# ── 5. Python 3 ──
+# ── 4. Python 3 ──
 progress "Python 3"
 install_if_missing_python
 
-# ── 6. Git ──
+# ── 5. Git ──
 progress "Git"
 install_if_missing_git
 
@@ -351,30 +376,30 @@ echo ""
 if [[ ${#warnings[@]} -eq 0 ]]; then
   echo -e "${GREEN}${BOLD}  ✅ 설치가 모두 완료되었습니다!${NC}"
 else
-  echo -e "${YELLOW}${BOLD}  ✅ 설치(필수) 완료, 선택 항목 일부 미완료${NC}"
+  echo -e "${YELLOW}${BOLD}  ⚠ Claude Code 설치 완료, 기본 개발 환경 일부 미완료${NC}"
 fi
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo -e "  설치된 항목:"
-if command -v brew &>/dev/null; then
-  echo -e "  ${GREEN}✓${NC} Homebrew  $(brew --version 2>/dev/null | head -1)"
+if command -v brew &>/dev/null && brew_ver=$(get_brew_version); then
+  echo -e "  ${GREEN}✓${NC} Homebrew  $brew_ver"
 else
   echo -e "  ${YELLOW}✗${NC} Homebrew  미설치"
 fi
-if command -v node &>/dev/null; then
-  echo -e "  ${GREEN}✓${NC} Node.js   $(node -v)"
+if command -v node &>/dev/null && node_ver=$(node -v 2>&1); then
+  echo -e "  ${GREEN}✓${NC} Node.js   $node_ver"
 else
   echo -e "  ${YELLOW}✗${NC} Node.js   미설치"
 fi
-if command -v python3 &>/dev/null; then
-  echo -e "  ${GREEN}✓${NC} Python    $(python3 --version 2>&1)"
+if command -v python3 &>/dev/null && py_ver=$(python3 --version 2>&1); then
+  echo -e "  ${GREEN}✓${NC} Python    $py_ver"
 else
   echo -e "  ${YELLOW}✗${NC} Python    미설치"
 fi
-if command -v git &>/dev/null; then
-  echo -e "  ${GREEN}✓${NC} Git       $(git --version)"
+if command -v git &>/dev/null && git_ver=$(git --version 2>&1); then
+  echo -e "  ${GREEN}✓${NC} Git       $git_ver"
 else
   echo -e "  ${YELLOW}✗${NC} Git       미설치"
 fi
@@ -389,3 +414,7 @@ echo -e "  OAuth 400 또는 코드 붙여넣기 문제가 나면 ${YELLOW}claude
 echo -e "  브라우저가 안 열리면 로그인 화면에서 ${YELLOW}c${NC} 를 눌러 주소를 복사한 뒤 Chrome에 붙여넣으세요."
 print_warning_summary
 echo ""
+
+if [[ ${#warnings[@]} -gt 0 ]]; then
+  exit 1
+fi
