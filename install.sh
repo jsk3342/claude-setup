@@ -17,6 +17,7 @@ BOLD='\033[1m'
 
 step=0
 total=6
+warnings=()
 
 progress() {
   step=$((step + 1))
@@ -37,6 +38,101 @@ skip() {
 fail() {
   echo -e "  ${RED}✗${NC} $1"
   exit 1
+}
+
+warn() {
+  warnings+=("$1")
+  echo -e "  ${YELLOW}!${NC} $1"
+}
+
+print_warning_summary() {
+  if [[ ${#warnings[@]} -eq 0 ]]; then
+    return
+  fi
+
+  echo ""
+  echo -e "${YELLOW}아래 항목은 Claude Code와 별개로 설치되지 않았습니다.${NC}"
+  for item in "${warnings[@]}"; do
+    echo "  - $item"
+  done
+}
+
+ensure_brew_in_path() {
+  if command -v brew &>/dev/null; then
+    return 0
+  fi
+
+  if [[ -f /opt/homebrew/bin/brew ]]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+    return 0
+  fi
+
+  if [[ -f /usr/local/bin/brew ]]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+    return 0
+  fi
+
+  return 1
+}
+
+install_if_missing_node() {
+  if command -v node &>/dev/null; then
+    node_ver=$(node -v)
+    skip "Node.js $node_ver"
+    return 0
+  fi
+
+  if ! ensure_brew_in_path; then
+    warn "Node.js: Homebrew가 없어 수동 설치가 필요합니다."
+    return 0
+  fi
+
+  echo "  Node.js를 설치합니다..."
+  if brew install node; then
+    ok "Node.js $(node -v) 설치 완료"
+  else
+    warn "Node.js: Homebrew 설치 중 실패했습니다. (개발 도구 필요 시 수동으로 설치하세요)"
+  fi
+}
+
+install_if_missing_python() {
+  if command -v python3 &>/dev/null; then
+    py_ver=$(python3 --version 2>&1)
+    skip "$py_ver"
+    return 0
+  fi
+
+  if ! ensure_brew_in_path; then
+    warn "Python 3: Homebrew가 없어 수동 설치가 필요합니다."
+    return 0
+  fi
+
+  echo "  Python 3를 설치합니다..."
+  if brew install python; then
+    ok "$(python3 --version) 설치 완료"
+  else
+    warn "Python 3: Homebrew 설치 중 실패했습니다. (개발 도구 필요 시 수동으로 설치하세요)"
+  fi
+}
+
+install_if_missing_git() {
+  if command -v git &>/dev/null; then
+    git_ver=$(git --version)
+    skip "$git_ver"
+    return 0
+  fi
+
+  if ! ensure_brew_in_path; then
+    warn "Git: Homebrew가 없어 수동 설치가 필요합니다."
+    return 0
+  fi
+
+  echo "  Git을 설치합니다..."
+  if brew install git; then
+    ok "$(git --version) 설치 완료"
+  else
+    warn "Git: Homebrew 설치 중 실패했습니다. (개발 도구 필요 시 수동으로 설치하세요)"
+  fi
 }
 
 ensure_config_line() {
@@ -132,100 +228,7 @@ echo -e "${BOLD}🚀 클로드 코드 올인원 설치를 시작합니다${NC}"
 echo -e "   macOS $(sw_vers -productVersion) | $(uname -m)"
 echo ""
 
-# ── sudo 미리 획득 (이후 비밀번호 재입력 없음) ──
-echo -e "  설치에 관리자 권한이 필요합니다."
-sudo -v
-# sudo 타임아웃 방지 (백그라운드에서 갱신)
-while true; do sudo -n true; sleep 50; kill -0 "$$" || exit; done 2>/dev/null &
-
-# ── 1. Xcode Command Line Tools ──
-progress "Xcode Command Line Tools"
-
-if xcode-select -p &>/dev/null; then
-  skip "Xcode CLT"
-else
-  echo "  Xcode Command Line Tools를 설치합니다..."
-  echo "  (팝업이 뜨면 '설치'를 눌러주세요)"
-  xcode-select --install 2>/dev/null || true
-
-  # 설치 완료 대기
-  echo "  설치가 완료될 때까지 기다립니다..."
-  until xcode-select -p &>/dev/null; do
-    sleep 5
-  done
-  ok "Xcode CLT 설치 완료"
-fi
-
-# ── 2. Homebrew ──
-progress "Homebrew (패키지 매니저)"
-
-if command -v brew &>/dev/null; then
-  skip "Homebrew"
-else
-  echo "  Homebrew를 설치합니다..."
-  NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-  # Apple Silicon PATH 등록
-  if [[ "$(uname -m)" == "arm64" ]]; then
-    echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zprofile"
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-    ok "Homebrew 설치 + PATH 등록 (Apple Silicon)"
-  else
-    echo 'eval "$(/usr/local/bin/brew shellenv)"' >> "$HOME/.zprofile"
-    eval "$(/usr/local/bin/brew shellenv)"
-    ok "Homebrew 설치 + PATH 등록 (Intel)"
-  fi
-fi
-
-# brew가 PATH에 있는지 재확인
-if ! command -v brew &>/dev/null; then
-  # 직접 경로로 시도
-  if [[ -f /opt/homebrew/bin/brew ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-  elif [[ -f /usr/local/bin/brew ]]; then
-    eval "$(/usr/local/bin/brew shellenv)"
-  else
-    fail "Homebrew 설치에 실패했습니다. 터미널을 재시작한 뒤 다시 시도해주세요."
-  fi
-fi
-
-# ── 3. Node.js ──
-progress "Node.js"
-
-if command -v node &>/dev/null; then
-  node_ver=$(node -v)
-  skip "Node.js $node_ver"
-else
-  echo "  Node.js를 설치합니다..."
-  brew install node
-  ok "Node.js $(node -v) 설치 완료"
-fi
-
-# ── 4. Python 3 ──
-progress "Python 3"
-
-if command -v python3 &>/dev/null; then
-  py_ver=$(python3 --version 2>&1)
-  skip "$py_ver"
-else
-  echo "  Python 3를 설치합니다..."
-  brew install python
-  ok "$(python3 --version) 설치 완료"
-fi
-
-# ── 5. Git ──
-progress "Git"
-
-if command -v git &>/dev/null; then
-  git_ver=$(git --version)
-  skip "$git_ver"
-else
-  echo "  Git을 설치합니다..."
-  brew install git
-  ok "$(git --version) 설치 완료"
-fi
-
-# ── 6. Claude Code ──
+# ── 1. Claude Code ──
 progress "Claude Code"
 
 # Recover an existing valid native install before checking other commands.
@@ -254,7 +257,9 @@ else
   fi
 
   echo "  Claude Code를 설치합니다..."
-  curl -fsSL https://claude.ai/install.sh | /bin/bash -s stable
+  if ! curl -fsSL https://claude.ai/install.sh | /bin/bash -s stable; then
+    fail "Claude Code 설치가 실패했습니다."
+  fi
 
   if ! verify_claude_code "$claude_native_bin"; then
     fail "Claude Code 공식 설치기가 실행 가능한 네이티브 파일을 만들지 못했습니다."
@@ -275,17 +280,104 @@ fi
 
 ok "Claude Code $claude_ver 설치 및 실행 확인"
 
+# ── 2. Xcode Command Line Tools ──
+progress "Xcode Command Line Tools"
+
+if xcode-select -p &>/dev/null; then
+  skip "Xcode CLT"
+else
+  echo "  Xcode Command Line Tools를 설치합니다..."
+  echo "  (팝업이 뜨면 '설치'를 눌러주세요)"
+  xcode-select --install 2>/dev/null || true
+  wait_count=0
+
+  # 설치 완료 대기
+  echo "  설치가 완료될 때까지 기다립니다..."
+  until xcode-select -p &>/dev/null; do
+    sleep 5
+    wait_count=$((wait_count + 1))
+    if [[ "$wait_count" -ge 12 ]]; then
+      warn "Xcode CLT: 사용자 동작 대기 타임아웃. 나중에 수동 설치해 주세요."
+      break
+    fi
+  done
+
+  if xcode-select -p &>/dev/null; then
+    ok "Xcode CLT 설치 완료"
+  fi
+fi
+
+# ── 3. Homebrew (패키지 매니저) ──
+progress "Homebrew (패키지 매니저)"
+
+if command -v brew &>/dev/null; then
+  skip "Homebrew"
+else
+  echo "  Homebrew를 설치합니다..."
+  if ! NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; then
+    warn "Homebrew: 설치 실패 (개발 도구 단계는 선택 설치로 넘어갑니다)"
+  else
+    # Apple Silicon PATH 등록
+    if [[ "$(uname -m)" == "arm64" ]]; then
+      echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> "$HOME/.zprofile"
+      eval "$(/opt/homebrew/bin/brew shellenv)"
+      ok "Homebrew 설치 + PATH 등록 (Apple Silicon)"
+    else
+      echo 'eval "$(/usr/local/bin/brew shellenv)"' >> "$HOME/.zprofile"
+      eval "$(/usr/local/bin/brew shellenv)"
+      ok "Homebrew 설치 + PATH 등록 (Intel)"
+    fi
+  fi
+fi
+
+if ! ensure_brew_in_path; then
+  warn "Homebrew 경로 등록이 안 되어 있어 Node/Python/Git은 설치되지 않았습니다."
+fi
+
+# ── 4. Node.js ──
+progress "Node.js"
+install_if_missing_node
+
+# ── 5. Python 3 ──
+progress "Python 3"
+install_if_missing_python
+
+# ── 6. Git ──
+progress "Git"
+install_if_missing_git
+
 # ── 완료 ──
 echo ""
+if [[ ${#warnings[@]} -eq 0 ]]; then
+  echo -e "${GREEN}${BOLD}  ✅ 설치가 모두 완료되었습니다!${NC}"
+else
+  echo -e "${YELLOW}${BOLD}  ✅ 설치(필수) 완료, 선택 항목 일부 미완료${NC}"
+fi
+
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${GREEN}${BOLD}  ✅ 설치가 모두 완료되었습니다!${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 echo -e "  설치된 항목:"
-echo -e "  ${GREEN}✓${NC} Homebrew  $(brew --version 2>/dev/null | head -1)"
-echo -e "  ${GREEN}✓${NC} Node.js   $(node -v 2>/dev/null)"
-echo -e "  ${GREEN}✓${NC} Python    $(python3 --version 2>&1)"
-echo -e "  ${GREEN}✓${NC} Git       $(git --version 2>/dev/null)"
+if command -v brew &>/dev/null; then
+  echo -e "  ${GREEN}✓${NC} Homebrew  $(brew --version 2>/dev/null | head -1)"
+else
+  echo -e "  ${YELLOW}✗${NC} Homebrew  미설치"
+fi
+if command -v node &>/dev/null; then
+  echo -e "  ${GREEN}✓${NC} Node.js   $(node -v)"
+else
+  echo -e "  ${YELLOW}✗${NC} Node.js   미설치"
+fi
+if command -v python3 &>/dev/null; then
+  echo -e "  ${GREEN}✓${NC} Python    $(python3 --version 2>&1)"
+else
+  echo -e "  ${YELLOW}✗${NC} Python    미설치"
+fi
+if command -v git &>/dev/null; then
+  echo -e "  ${GREEN}✓${NC} Git       $(git --version)"
+else
+  echo -e "  ${YELLOW}✗${NC} Git       미설치"
+fi
 echo -e "  ${GREEN}✓${NC} Claude Code $claude_ver"
 echo ""
 echo -e "  ${BOLD}다음 단계:${NC}"
@@ -295,4 +387,5 @@ echo ""
 echo -e "  ${BOLD}로그인에서 막힐 때:${NC}"
 echo -e "  OAuth 400 또는 코드 붙여넣기 문제가 나면 ${YELLOW}claude auth login${NC} 으로 다시 로그인하세요."
 echo -e "  브라우저가 안 열리면 로그인 화면에서 ${YELLOW}c${NC} 를 눌러 주소를 복사한 뒤 Chrome에 붙여넣으세요."
+print_warning_summary
 echo ""
