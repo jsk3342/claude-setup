@@ -39,6 +39,7 @@ irm https://raw.githubusercontent.com/jsk3342/claude-setup/main/install.ps1 | ie
 - Mac의 긴 비대화형 도구 설치는 15초마다 실행 중·경과 시간을 표시합니다
 - 사용량 모드는 기존 상태줄 출력을 유지하며 추가됩니다. 설정 JSON이 잘못됐으면 덮어쓰지 않습니다
 - 기존 터미널 배색·폰트·단축키·프로필·Claude 권한은 바꾸지 않습니다
+- Windows Terminal이 없고 winget도 없으면 기존 Scoop으로 공식 포터블 배포본을 설치합니다. 기존 설정 파일을 이전하거나 덮어쓰지 않습니다
 - Claude Code 신규 설치는 Anthropic 공식 `stable` 설치기를 사용합니다
 - 실제 Claude Code 버전 확인과 새 터미널의 PATH 확인이 모두 통과해야 완료로 판정합니다
 - Homebrew가 없는 macOS에서는 관리자 인증 후 공식 설치기를 사용합니다

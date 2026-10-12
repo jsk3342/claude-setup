@@ -369,10 +369,16 @@ Write-Step -Num $step -Total $total -Message "Windows Terminal" -Reason "Claude 
 if (Get-Command wt.exe -ErrorAction SilentlyContinue) {
     Write-Skip "Windows Terminal"
 } else {
-    if (!(Test-Command "winget")) { Write-Fail "Windows Terminal 설치에 필요한 winget이 없습니다. Microsoft Store에서 Windows Terminal을 설치한 뒤 다시 실행하세요." }
-    & winget install --id Microsoft.WindowsTerminal -e --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity
-    if ($LASTEXITCODE -ne 0) { Write-Fail "Windows Terminal 설치에 실패했습니다. 위 오류를 확인하세요." }
-    $env:PATH = [Environment]::GetEnvironmentVariable('PATH', 'User') + ';' + [Environment]::GetEnvironmentVariable('PATH', 'Machine')
+    if (Test-Command "winget") {
+        & winget install --id Microsoft.WindowsTerminal -e --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity
+        if ($LASTEXITCODE -ne 0) { Write-Fail "Windows Terminal 설치에 실패했습니다. 위 오류를 확인하세요." }
+    } else {
+        Write-Host "  winget이 없어 기존 Scoop으로 공식 Windows Terminal 포터블 배포본을 설치합니다."
+        Write-Host "  기존 터미널 설정 파일을 복사하거나 덮어쓰지 않습니다."
+        scoop bucket add extras
+        scoop install extras/windows-terminal
+    }
+    Refresh-Path
 }
 if (!(Get-Command wt.exe -ErrorAction SilentlyContinue)) { Write-Fail "Windows Terminal 실행 파일 확인에 실패했습니다. 새 PowerShell에서 다시 시도하세요." }
 Write-Ok "Windows Terminal 실행 파일 확인"
