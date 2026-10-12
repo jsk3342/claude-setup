@@ -28,7 +28,8 @@ function Write-Skip {
 function Write-Fail {
     param([string]$Message)
     Write-Host "  ✗ $Message" -ForegroundColor Red
-    exit 1
+    # irm | iex로 실행되면 exit가 사용자 PowerShell 창을 닫아 안내를 못 읽는다. throw는 창을 남긴다.
+    throw "설치를 중단했습니다."
 }
 
 function Test-Command {
@@ -315,7 +316,7 @@ if ($null -ne $verifiedClaudePath) {
                 Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
                 Write-Fail "Claude Code 공식 설치기가 ${maxAttempts}번 실패했습니다. PC를 재시작한 뒤 같은 명령어를 다시 실행해주세요."
             }
-            Write-Host "  ! 설치 파일이 잠겨 있어 10초 뒤 다시 시도합니다 ($attempt/$maxAttempts)" -ForegroundColor Yellow
+            Write-Host "  ! 설치가 실패해 10초 뒤 다시 시도합니다 ($attempt/$maxAttempts): $($_.Exception.Message)" -ForegroundColor Yellow
             Start-Sleep -Seconds 10
             Remove-Item -Recurse -Force $stagingDir -ErrorAction SilentlyContinue
         }
