@@ -175,8 +175,19 @@ if (Test-Command "scoop") {
     # Scoop 설치에 필요한 실행 정책 설정
     Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
 
-    # Scoop 설치
-    Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+    # Scoop 설치기는 관리자 PowerShell을 기본 거부하므로 그때만 -RunAsAdmin을 넘긴다.
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $scoopInstaller = [scriptblock]::Create((Invoke-RestMethod -Uri https://get.scoop.sh))
+    $scoopArgs = @{}
+    if ($isAdmin) {
+        Write-Host "  ! 관리자 PowerShell이라 Scoop을 관리자 모드로 설치합니다." -ForegroundColor Yellow
+        $scoopArgs.RunAsAdmin = $true
+    }
+
+    # Scoop 설치기는 거부할 때 break로 빠진다. 루프로 감싸야 이 스크립트까지 조용히 멈추지 않는다.
+    foreach ($once in 1) {
+        & $scoopInstaller @scoopArgs
+    }
 
     Refresh-Path
 
