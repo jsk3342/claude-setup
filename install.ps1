@@ -300,7 +300,26 @@ if ($null -ne $verifiedClaudePath) {
 
     # Delegate download, checksum validation, and installation to Anthropic.
     $officialInstaller = Invoke-RestMethod -Uri https://claude.ai/install.ps1 -ErrorAction Stop
-    & ([scriptblock]::Create($officialInstaller)) stable
+
+    # 갓 받은 claude.exe를 백신이 검사하는 동안 staging 폴더가 잠겨 EBUSY로 실패할 수 있다.
+    # 잠금은 잠깐이라 남은 staging을 치우고 잠시 뒤 다시 시도한다.
+    $stagingDir = "$env:USERPROFILE\.cache\claude\staging"
+    $maxAttempts = 3
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        try {
+            & ([scriptblock]::Create($officialInstaller)) stable
+            break
+        }
+        catch {
+            if ($attempt -eq $maxAttempts) {
+                Write-Host "  $($_.Exception.Message)" -ForegroundColor Red
+                Write-Fail "Claude Code 공식 설치기가 ${maxAttempts}번 실패했습니다. PC를 재시작한 뒤 같은 명령어를 다시 실행해주세요."
+            }
+            Write-Host "  ! 설치 파일이 잠겨 있어 10초 뒤 다시 시도합니다 ($attempt/$maxAttempts)" -ForegroundColor Yellow
+            Start-Sleep -Seconds 10
+            Remove-Item -Recurse -Force $stagingDir -ErrorAction SilentlyContinue
+        }
+    }
 
     Refresh-Path
     if (Test-Path $nativeClaudeExe) {
