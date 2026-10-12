@@ -55,6 +55,7 @@ jobs:
           # Match the README command path (`irm ... | iex`). Windows PowerShell
           # 5.1 can misread a checked-out UTF-8 script without a BOM, while
           # Invoke-RestMethod decodes GitHub's HTTP response before execution.
+          $env:CLAUDE_SETUP_REF = $env:GITHUB_SHA
           $installerUrl = "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1"
           $installer = Invoke-RestMethod -Uri $installerUrl -ErrorAction Stop
 

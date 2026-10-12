@@ -18,6 +18,26 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - name: Check out the matching test code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Seed user settings that the installer must preserve
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $profilePath = $PROFILE.CurrentUserCurrentHost
+          $terminalPath = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows Terminal\settings.json'
+          foreach ($path in @($profilePath, $terminalPath)) {
+              New-Item -ItemType Directory -Force -Path (Split-Path $path -Parent) | Out-Null
+          }
+          Set-Content -LiteralPath $profilePath -Value '# Existing user profile: preserve this file' -Encoding UTF8
+          Set-Content -LiteralPath $terminalPath -Value '{"theme":"dark","profiles":{"defaults":{"font":{"size":17}}}}' -Encoding UTF8
+          $hashes = @{}
+          foreach ($path in @($profilePath, $terminalPath)) { $hashes[$path] = (Get-FileHash -LiteralPath $path).Hash }
+          $hashes | ConvertTo-Json | Set-Content -LiteralPath "$env:RUNNER_TEMP\settings-before.json" -Encoding UTF8
+
       - name: Hide preinstalled Node, Python and Git
         shell: powershell
         run: |
@@ -49,6 +69,7 @@ jobs:
               if (Get-Command $tool -ErrorAction SilentlyContinue) { throw "$tool is still visible before install." }
           }
 
+          $env:CLAUDE_SETUP_REF = $env:GITHUB_SHA
           $installerUrl = "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1"
           irm $installerUrl | iex
 
@@ -58,6 +79,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           Remove-Item Env:CI -ErrorAction SilentlyContinue
           $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+          $env:CLAUDE_SETUP_REF = $env:GITHUB_SHA
           $installerUrl = "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1"
           irm $installerUrl | iex
 
@@ -76,3 +98,19 @@ jobs:
           $claude = (& claude --version 2>&1) -join ""
           if ($LASTEXITCODE -ne 0 -or $claude -notmatch '\(Claude Code\)') { throw "claude --version failed: $claude" }
           Write-Host $claude
+
+      - name: Verify usage mode on real Windows
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
+          node --test tests/usage-mode.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw "Usage mode Windows tests failed." }
+          if (!(Get-Command wt.exe -ErrorAction SilentlyContinue)) { throw "Windows Terminal is unavailable." }
+          $settingsPath = Join-Path $env:USERPROFILE '.claude\settings.json'
+          $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+          if ($settings.statusLine.command -notmatch 'usage-line.mjs') { throw "Usage mode was not connected." }
+          $hashes = Get-Content "$env:RUNNER_TEMP\settings-before.json" -Raw | ConvertFrom-Json
+          foreach ($item in $hashes.PSObject.Properties) {
+              if ((Get-FileHash -LiteralPath $item.Name).Hash -ne $item.Value) { throw "User settings changed: $($item.Name)" }
+          }

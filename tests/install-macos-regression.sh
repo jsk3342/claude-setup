@@ -76,8 +76,15 @@ case "${1:-}" in
     printf 'export PATH="%s:$PATH"\n' "$fake_bin"
     ;;
   install)
-    if [[ "${2:-}" == "node" && "${FAKE_BREW_FAIL_NODE:-0}" == "1" ]]; then
-      exit 42
+    if [[ "${2:-}" == "node" ]]; then
+      if [[ "${HOMEBREW_NO_ASK:-}" != "1" ]]; then
+        echo 'waiting for installation confirmation' >&2
+        exit 69
+      fi
+      if [[ "${FAKE_BREW_FAIL_NODE:-0}" == "1" ]]; then exit 42; fi
+      cp "$fake_bin/node-template" "$fake_bin/node"
+      chmod +x "$fake_bin/node"
+      exit 0
     fi
     exit 64
     ;;
@@ -118,6 +125,7 @@ if [[ $tool_status -ne 0 ]] || [[ "$tool_output" != *"설치가 모두 완료되
   exit 1
 fi
 
+cp "$tool_bin/node" "$tool_bin/node-template"
 rm -f "$tool_bin/node"
 set +e
 partial_output=$(
@@ -157,4 +165,17 @@ fi
   esac
 )
 
+# Missing Node must install without waiting for an unannounced y/n prompt.
+set +e
+confirmed_output=$(
+  unset -f sudo xcode-select brew node python3 git claude curl sleep kill
+  HOME="$tool_home" SHELL=/bin/bash PATH="$tool_bin:/usr/bin:/bin:/usr/sbin:/sbin" /bin/bash "$repo_dir/install.sh" 2>&1
+)
+confirmed_status=$?
+set -e
+if [[ $confirmed_status -ne 0 ]] || [[ "$confirmed_output" != *"설치가 모두 완료되었습니다"* ]]; then
+  printf '%s\n' "$confirmed_output"
+  printf '%s\n' 'FAIL: missing Node was not installed without confirmation' >&2
+  exit 1
+fi
 printf '%s\n' "macOS installer regressions: OK"
