@@ -7,10 +7,15 @@ $ErrorActionPreference = "Stop"
 
 # ── 색상 함수 ──
 function Write-Step {
-    param([int]$Num, [int]$Total, [string]$Message)
+    param([int]$Num, [int]$Total, [string]$Message, [string]$Reason)
     Write-Host ""
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
-    Write-Host "[$Num/$Total] $Message" -ForegroundColor White -NoNewline
+    $done = $Num - 1
+    $bar = ('■' * $done) + ('□' * ($Total - $done))
+    Write-Progress -Id 71 -Activity 'Claude Code 올인원 설치' -Status "$Message · 진행 중" -PercentComplete ([int](100 * $done / $Total))
+    Write-Host "  확인 완료 [$bar] $done/$Total (시간 진행률이 아닙니다)"
+    Write-Host "  이유: $Reason"
+    Write-Host "[$Num/$Total] $Message · 진행 중" -ForegroundColor White -NoNewline
     Write-Host "" -ForegroundColor White
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
 }
@@ -28,6 +33,7 @@ function Write-Skip {
 function Write-Fail {
     param([string]$Message)
     Write-Host "  ✗ $Message" -ForegroundColor Red
+    Write-Progress -Id 71 -Activity 'Claude Code 올인원 설치' -Completed
     # irm | iex로 실행되면 exit가 사용자 PowerShell 창을 닫아 안내를 못 읽는다. throw는 창을 남긴다.
     throw "설치를 중단했습니다."
 }
@@ -161,12 +167,12 @@ Write-Host "🚀 클로드 코드 올인원 설치를 시작합니다" -Foregrou
 Write-Host "   Windows $([System.Environment]::OSVersion.Version)" -ForegroundColor Gray
 Write-Host ""
 
-$total = 5
+$total = 7
 $step = 0
 
 # ── 1. Scoop (패키지 매니저) ──
 $step++
-Write-Step -Num $step -Total $total -Message "Scoop (패키지 매니저)"
+Write-Step -Num $step -Total $total -Message "Scoop (패키지 매니저)" -Reason "필요한 도구를 하나씩 찾아 설치하지 않도록 도와줍니다."
 
 if (Test-Command "scoop") {
     Write-Skip "Scoop"
@@ -201,7 +207,7 @@ if (Test-Command "scoop") {
 
 # ── 2. Node.js ──
 $step++
-Write-Step -Num $step -Total $total -Message "Node.js"
+Write-Step -Num $step -Total $total -Message "Node.js" -Reason "앱과 사용량 표시 같은 추가 도구를 실행할 때 씁니다."
 
 if (Test-Command "node") {
     $nodeVer = node -v
@@ -218,7 +224,7 @@ if (Test-Command "node") {
 
 # ── 3. Python 3 ──
 $step++
-Write-Step -Num $step -Total $total -Message "Python 3"
+Write-Step -Num $step -Total $total -Message "Python 3" -Reason "이후 자료 정리와 자동화 작업에 씁니다. 뉴스 대화 자체의 필수 조건은 아닙니다."
 
 $pyVer = Get-PythonVersion
 if ($null -ne $pyVer) {
@@ -238,7 +244,7 @@ if ($null -ne $pyVer) {
 
 # ── 4. Git ──
 $step++
-Write-Step -Num $step -Total $total -Message "Git"
+Write-Step -Num $step -Total $total -Message "Git" -Reason "이후 작업 파일의 변경 내역을 관리하는 도구입니다."
 
 if (Test-Command "git") {
     $gitVer = git --version
@@ -255,7 +261,7 @@ if (Test-Command "git") {
 
 # ── 5. Claude Code ──
 $step++
-Write-Step -Num $step -Total $total -Message "Claude Code"
+Write-Step -Num $step -Total $total -Message "Claude Code" -Reason "컴퓨터에서 AI와 대화하고 작업을 맡기는 도구입니다."
 
 # Only canonical installs can be skipped: their path can be repaired persistently.
 Refresh-Path
@@ -357,6 +363,54 @@ if (!$finalPathMatches -or $null -eq $finalClaudeVersion) {
 $claudeVer = $finalClaudeVersion
 Write-Ok "Claude Code $claudeVer 설치 및 실행 확인"
 
+# ── 6. Windows Terminal (앱 설치만, 꾸미기 없음) ──
+$step++
+Write-Step -Num $step -Total $total -Message "Windows Terminal" -Reason "Claude Code를 실행할 창을 준비합니다. 기존 배색, 폰트, 프로필은 유지합니다."
+if (Get-Command wt.exe -ErrorAction SilentlyContinue) {
+    Write-Skip "Windows Terminal"
+} else {
+    if (Test-Command "winget") {
+        & winget install --id Microsoft.WindowsTerminal -e --source winget --accept-package-agreements --accept-source-agreements --disable-interactivity
+        if ($LASTEXITCODE -ne 0) { Write-Fail "Windows Terminal 설치에 실패했습니다. 위 오류를 확인하세요." }
+    } else {
+        Write-Host "  winget이 없어 기존 Scoop으로 공식 Windows Terminal 포터블 배포본을 설치합니다."
+        Write-Host "  기존 터미널 설정 파일을 복사하거나 덮어쓰지 않습니다."
+        scoop bucket add extras
+        scoop install extras/windows-terminal
+    }
+    Refresh-Path
+}
+if (!(Get-Command wt.exe -ErrorAction SilentlyContinue)) { Write-Fail "Windows Terminal 실행 파일 확인에 실패했습니다. 새 PowerShell에서 다시 시도하세요." }
+Write-Ok "Windows Terminal 실행 파일 확인"
+
+# ── 7. 사용량 모드 ──
+$step++
+Write-Step -Num $step -Total $total -Message "사용량 모드" -Reason "Claude 사용 한도와 대화 상태를 표시합니다. 터미널 꾸미기와는 별개입니다."
+$modeTemp = $null
+$modeSource = $null
+if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot 'usage-mode\install.mjs'))) {
+    $modeSource = Join-Path $PSScriptRoot 'usage-mode'
+} else {
+    $modeTemp = Join-Path ([IO.Path]::GetTempPath()) ('claude-usage-mode-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $modeTemp | Out-Null
+    $modeSource = $modeTemp
+}
+try {
+    if ($modeTemp) {
+        $ref = if ($env:CLAUDE_SETUP_REF) { $env:CLAUDE_SETUP_REF } else { 'main' }
+        foreach ($asset in @('install.mjs', 'usage-line.mjs', 'render.mjs', 'LICENSE')) {
+            Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/jsk3342/claude-setup/$ref/usage-mode/$asset" -OutFile (Join-Path $modeSource $asset)
+        }
+    }
+    & node (Join-Path $modeSource 'install.mjs')
+    if ($LASTEXITCODE -ne 0) { Write-Fail "사용량 모드 연결에 실패했습니다. 기존 설정을 확인하세요." }
+} finally {
+    if ($modeTemp) { Remove-Item -LiteralPath $modeTemp -Recurse -Force -ErrorAction SilentlyContinue }
+}
+Write-Ok "사용량 모드 설치 및 설정 연결 확인"
+Write-Progress -Id 71 -Activity 'Claude Code 올인원 설치' -Completed
+Write-Host "  확인 완료 [■■■■■■■] 7/7"
+
 # ── 완료 ──
 Write-Host ""
 Write-Host "  설치된 항목:" -ForegroundColor White
@@ -365,6 +419,8 @@ Write-Host "  ✓ Node.js   $nodeVer" -ForegroundColor Green
 Write-Host "  ✓ Python    $pyVer" -ForegroundColor Green
 Write-Host "  ✓ Git       $gitVer" -ForegroundColor Green
 Write-Host "  ✓ Claude Code $claudeVer" -ForegroundColor Green
+Write-Host "  ✓ Windows Terminal (기존 꾸미기 유지)" -ForegroundColor Green
+Write-Host "  ✓ 사용량 모드" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
@@ -373,10 +429,13 @@ Write-Host "━━━━━━━━━━━━━━━━━━━━━━�
 
 Write-Host ""
 Write-Host "  다음 단계:" -ForegroundColor White
-Write-Host "  현재 PowerShell 창을 닫고 새로 연 뒤 " -NoNewline
+Write-Host "  새 Windows Terminal을 열고 " -NoNewline
 Write-Host "claude" -ForegroundColor Yellow -NoNewline
 Write-Host " 를 입력하세요."
 Write-Host "  처음 실행하면 Anthropic 계정 연결을 안내합니다."
+Write-Host "  로그인 후 Claude 대화 화면에: 오늘 뉴스 정리해서 알려줘"
+Write-Host "  설치 명령은 PowerShell에, 이 요청은 Claude 대화 화면에 입력합니다."
+Write-Host "  다음에도 Windows Terminal을 열고 claude를 입력하면 됩니다. 다시 설치하지 않습니다."
 Write-Host ""
 Write-Host "  로그인에서 막힐 때:" -ForegroundColor White
 Write-Host "  OAuth 400 또는 코드 붙여넣기 문제가 나면 " -NoNewline

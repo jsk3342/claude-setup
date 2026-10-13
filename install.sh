@@ -16,15 +16,66 @@ NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 step=0
-total=5
+total=7
+completed=0
+step_warnings=0
+step_started=0
 warnings=()
+status_monitor_pid=""
+cleanup_monitor() {
+  if [[ -n "$status_monitor_pid" ]]; then
+    kill "$status_monitor_pid" 2>/dev/null || true
+    wait "$status_monitor_pid" 2>/dev/null || true
+    status_monitor_pid=""
+  fi
+}
+trap cleanup_monitor EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+finish_step() {
+  if [[ $step -gt 0 ]]; then
+    if [[ ${#warnings[@]} -eq $step_warnings ]]; then
+      completed=$((completed + 1))
+      echo "  단계 확인 완료 · 경과 $((SECONDS - step_started))초"
+    else
+      echo "  단계 일부 미완료 · 아래 안내를 확인하세요."
+    fi
+  fi
+}
 
 progress() {
+  finish_step
   step=$((step + 1))
+  step_warnings=${#warnings[@]}
+  step_started=$SECONDS
+  local bar="" i
+  for ((i=0; i<total; i++)); do
+    if [[ $i -lt $completed ]]; then bar+="■"; else bar+="□"; fi
+  done
   echo ""
   echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-  echo -e "${BOLD}[$step/$total] $1${NC}"
+  echo -e "${BOLD}[$step/$total] $1 · 진행 중${NC}"
+  echo "  확인 완료 [$bar] $completed/$total (시간 진행률이 아닙니다)"
+  echo "  이유: $2"
   echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+}
+
+# Foreground commands retain stdin and their own download logs. Only long,
+# non-interactive installs get a heartbeat; authentication stays unobstructed.
+run_with_status() {
+  local result=0 started=$SECONDS
+  if [[ -t 1 ]]; then
+    (
+      while sleep 15; do
+        echo "  설치 작업 실행 중 · 경과 $((SECONDS - started))초 · 완료 문구를 기다려주세요."
+      done
+    ) &
+    status_monitor_pid=$!
+  fi
+  "$@" || result=$?
+  cleanup_monitor
+  return "$result"
 }
 
 ok() {
@@ -51,7 +102,7 @@ print_warning_summary() {
   fi
 
   echo ""
-  echo -e "${YELLOW}기본 개발 환경에서 완료되지 않은 항목:${NC}"
+  echo -e "${YELLOW}완료되지 않은 항목:${NC}"
   for item in "${warnings[@]}"; do
     echo "  - $item"
   done
@@ -105,7 +156,7 @@ install_if_missing_node() {
   fi
 
   echo "  Node.js를 설치합니다..."
-  if brew install node && node_ver=$(node -v 2>&1); then
+  if run_with_status env HOMEBREW_NO_ASK=1 brew install node && node_ver=$(node -v 2>&1); then
     ok "Node.js $node_ver 설치 완료"
   else
     warn "Node.js: Homebrew 설치 또는 실행 확인에 실패했습니다."
@@ -126,7 +177,7 @@ install_if_missing_python() {
   fi
 
   echo "  Python 3를 설치합니다..."
-  if brew install python && py_ver=$(python3 --version 2>&1); then
+  if run_with_status env HOMEBREW_NO_ASK=1 brew install python && py_ver=$(python3 --version 2>&1); then
     ok "$py_ver 설치 완료"
   else
     warn "Python 3: Homebrew 설치 또는 실행 확인에 실패했습니다."
@@ -147,7 +198,7 @@ install_if_missing_git() {
   fi
 
   echo "  Git을 설치합니다..."
-  if brew install git && git_ver=$(git --version 2>&1); then
+  if run_with_status env HOMEBREW_NO_ASK=1 brew install git && git_ver=$(git --version 2>&1); then
     ok "$git_ver 설치 완료"
   else
     warn "Git: Homebrew 설치 또는 실행 확인에 실패했습니다."
@@ -273,7 +324,7 @@ echo -e "   macOS $(sw_vers -productVersion) | $(uname -m)"
 echo ""
 
 # ── 1. Claude Code ──
-progress "Claude Code"
+progress "Claude Code" "컴퓨터에서 AI와 대화하고 작업을 맡기는 도구입니다."
 
 # Recover an existing valid native install before checking other commands.
 claude_native_bin="$HOME/.local/bin/claude"
@@ -325,7 +376,7 @@ fi
 ok "Claude Code $claude_ver 설치 및 실행 확인"
 
 # ── 2. Homebrew (패키지 매니저) ──
-progress "Homebrew (패키지 매니저)"
+progress "Homebrew (설치 관리자)" "필요한 도구를 하나씩 찾아 설치하지 않도록 도와줍니다."
 
 if ensure_brew_in_path; then
   brew_bin=$(command -v brew)
@@ -340,6 +391,7 @@ else
   echo "  필요한 경우 Homebrew가 macOS 기본 개발 도구도 함께 설치합니다."
   homebrew_install_error=""
 
+  echo "  입력 대기: Mac 로그인 비밀번호를 요청할 수 있습니다. 입력해도 글자가 보이지 않는 것은 정상입니다."
   if ! sudo -v; then
     homebrew_install_error="Homebrew: 관리자 인증에 실패했습니다."
   elif ! curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | NONINTERACTIVE=1 /bin/bash; then
@@ -360,23 +412,78 @@ else
 fi
 
 # ── 3. Node.js ──
-progress "Node.js"
+progress "Node.js" "앱과 사용량 표시 같은 추가 도구를 실행할 때 씁니다."
 install_if_missing_node
 
 # ── 4. Python 3 ──
-progress "Python 3"
+progress "Python 3" "이후 자료 정리와 자동화 작업에 쓰는 도구입니다. 뉴스 대화 자체의 필수 조건은 아닙니다."
 install_if_missing_python
 
 # ── 5. Git ──
-progress "Git"
+progress "Git" "이후 작업 파일의 변경 내역을 관리하는 도구입니다."
 install_if_missing_git
+
+# ── 6. iTerm2 ──
+progress "iTerm2" "앞으로 Claude Code를 실행할 창을 준비합니다. 기존 터미널 설정은 바꾸지 않습니다."
+iterm_app=""
+for candidate in "$HOME/Applications/iTerm.app" /Applications/iTerm.app; do
+  if [[ -x "$candidate/Contents/MacOS/iTerm2" ]]; then
+    iterm_app="$candidate"
+    break
+  fi
+done
+if [[ -n "$iterm_app" ]]; then
+  skip "iTerm2"
+elif ensure_brew_in_path; then
+  mkdir -p "$HOME/Applications"
+  if run_with_status env HOMEBREW_NO_ASK=1 brew install --cask --appdir="$HOME/Applications" iterm2 &&
+     [[ -x "$HOME/Applications/iTerm.app/Contents/MacOS/iTerm2" ]]; then
+    iterm_app="$HOME/Applications/iTerm.app"
+    ok "iTerm2 앱 실행 파일 확인 완료"
+  else
+    warn "iTerm2: 설치 또는 앱 실행 파일 확인에 실패했습니다. https://iterm2.com/downloads.html 에서 설치할 수 있습니다."
+  fi
+else
+  warn "iTerm2: Homebrew가 없어 자동 설치하지 못했습니다. https://iterm2.com/downloads.html 에서 설치할 수 있습니다."
+fi
+# ── 7. 사용량 모드 ──
+progress "사용량 모드" "Claude 사용 한도와 대화 상태를 표시합니다. 터미널 꾸미기와는 별개입니다."
+mode_source=""
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+  mode_source="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/usage-mode"
+fi
+mode_temp=""
+if [[ ! -f "$mode_source/install.mjs" ]]; then
+  mode_temp=$(mktemp -d "${TMPDIR:-/tmp}/claude-usage-mode.XXXXXX")
+  mode_source="$mode_temp"
+  mode_download_ok=1
+  for asset in install.mjs usage-line.mjs render.mjs LICENSE; do
+    if ! curl -fsSL "https://raw.githubusercontent.com/jsk3342/claude-setup/${CLAUDE_SETUP_REF:-main}/usage-mode/$asset" -o "$mode_source/$asset"; then
+      mode_download_ok=0
+      break
+    fi
+  done
+else
+  mode_download_ok=1
+fi
+if [[ $mode_download_ok -eq 1 ]] && command -v node &>/dev/null && node "$mode_source/install.mjs"; then
+  ok "사용량 모드 설치 및 설정 연결 확인"
+else
+  warn "사용량 모드: 파일 다운로드 또는 설정 연결에 실패했습니다. 기존 설정을 확인하고 같은 설치 명령으로 다시 시도하세요."
+fi
+if [[ -n "$mode_temp" ]]; then
+  rm -f "$mode_temp/install.mjs" "$mode_temp/usage-line.mjs" "$mode_temp/render.mjs" "$mode_temp/LICENSE"
+  rmdir "$mode_temp"
+fi
+finish_step
+echo "  확인 완료 $completed/$total 단계"
 
 # ── 완료 ──
 echo ""
 if [[ ${#warnings[@]} -eq 0 ]]; then
   echo -e "${GREEN}${BOLD}  ✅ 설치가 모두 완료되었습니다!${NC}"
 else
-  echo -e "${YELLOW}${BOLD}  ⚠ Claude Code 설치 완료, 기본 개발 환경 일부 미완료${NC}"
+  echo -e "${YELLOW}${BOLD}  ⚠ Claude Code 설치 완료, 추가 환경 일부 미완료${NC}"
 fi
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -406,8 +513,16 @@ fi
 echo -e "  ${GREEN}✓${NC} Claude Code $claude_ver"
 echo ""
 echo -e "  ${BOLD}다음 단계:${NC}"
-echo -e "  ${BOLD}현재 터미널 창을 닫고 새로 연 뒤${NC} ${YELLOW}claude${NC} 를 입력하세요."
+if [[ -n "$iterm_app" ]]; then
+  echo "  Finder에서 $iterm_app 을 열어주세요."
+else
+  echo "  iTerm2 수동 설치 전에도 새 기본 터미널에서 Claude Code를 실행할 수 있습니다."
+fi
+echo -e "  ${BOLD}새 터미널 창에서${NC} ${YELLOW}claude${NC} 를 입력하세요."
 echo -e "  처음 실행하면 Anthropic 계정 연결을 안내합니다."
+echo "  로그인 후 Claude 대화 화면에: 오늘 뉴스 정리해서 알려줘"
+echo "  설치 명령은 터미널에, 이 요청은 Claude 대화 화면에 입력합니다."
+echo "  다음에 사용할 때도 iTerm2를 열고 claude를 입력하면 됩니다. 다시 설치하지 않습니다."
 echo ""
 echo -e "  ${BOLD}로그인에서 막힐 때:${NC}"
 echo -e "  OAuth 400 또는 코드 붙여넣기 문제가 나면 ${YELLOW}claude auth login${NC} 으로 다시 로그인하세요."
