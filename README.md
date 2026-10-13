@@ -1,6 +1,8 @@
 # Claude Code 올인원 설치
 
-터미널에 한 줄 복사하면 클로드 코드 환경이 세팅됩니다.
+한 줄로 Claude Code·터미널 앱·사용량 모드까지 준비합니다. 설치 후 새 터미널에서 `claude`를 실행해 첫 대화를 시작하세요.
+
+기존 배색·폰트·단축키는 유지합니다. 꾸미기는 별도 [win-iterm2](https://github.com/jsk3342/win-iterm2)에서 원하는 사람만 적용합니다.
 
 ## macOS
 
@@ -19,6 +21,43 @@ irm https://raw.githubusercontent.com/jsk3342/claude-setup/main/install.ps1 | ie
 ```
 
 설치 항목: Scoop → Node.js → Python 3 → Git → Claude Code → Windows Terminal → 사용량 모드
+
+## 화면으로 보는 설치 흐름
+
+아래 진행·완료 화면은 실제 격리 테스트 로그를 브라우저에서 재생한 캡처입니다. 원본 터미널 UI 촬영본은 아닙니다. 사용량 화면의 숫자는 테스트 입력입니다.
+
+### 설치 중: 현재 단계와 설치 이유
+
+![현재 단계·설치 이유·경과 시간](docs/assets/install-progress.jpg)
+
+단계 번호는 전체 작업의 순서이며 마지막 번호가 나왔다고 끝난 것은 아닙니다. **전체 완료 안내**를 기다리세요. Mac 비밀번호 입력을 요청할 때는 입력해도 글자가 보이지 않는 것이 정상입니다.
+
+### 설치 완료: 별도로 실행하기
+
+![Mac 설치 완료와 첫 실행 안내](docs/assets/install-complete.jpg)
+
+Mac은 iTerm2, Windows는 Windows Terminal을 새로 열고 **`claude`를 입력**합니다. 로그인 후 Claude 대화 화면에 **“오늘 뉴스 정리해서 알려줘”**를 입력하세요.
+
+[Windows 완료 안내 캡처](docs/assets/windows-complete.jpg)
+
+### 사용량 모드: 설치와 함께 연결
+
+![사용량 모드 출력 예시 — 테스트 입력](docs/assets/usage-mode.jpg)
+
+- `5h`·`7d`: 계정의 5시간·주간 **사용률**. 남은 비율이 아닙니다.
+- `대화 컨텍스트`: 현재 대화가 컨텍스트 용량을 사용한 정도. 계정 한도와 별개입니다.
+- `existing-status-line`: 기존 상태줄 출력도 유지되는 테스트 예시입니다.
+- 첫 응답 전이나 계정이 값을 제공하지 않을 때는 `확인 전`으로 표시합니다.
+
+### 격리 검증 결과
+
+![Windows 일회용 러너 검증 성공](docs/assets/windows-ci-success.jpg)
+
+[Windows 실행 로그](https://github.com/jsk3342/claude-setup/actions/runs/38324701503): 실제 설치·재설치·새 PowerShell 실행·모드 테스트 4개·기존 설정 보존 통과.
+
+Mac은 새 macOS 26.6.2 arm64 VM에서 설치·재설치·새 셸 실행·설정 보존·iTerm2 실행을 확인했습니다. Windows 검증은 Server 2025 러너입니다. 소비자 PC의 GUI·실제 계정 로그인·live 한도·뉴스 응답은 별도 확인이 필요합니다.
+
+[영상용 캡처 목록과 촬영 순서](docs/video-shot-list.md)
 
 ## 뭐가 설치되나요?
 
