@@ -36,7 +36,7 @@ irm https://raw.githubusercontent.com/jsk3342/claude-setup/main/install.ps1 | ie
 
 ![Mac 설치 완료와 첫 실행 안내](docs/assets/install-complete.jpg)
 
-Mac은 iTerm2, Windows는 Windows Terminal을 새로 열고 **`claude`를 입력**합니다. 로그인 후 Claude 대화 화면에 **“오늘 뉴스 정리해서 알려줘”**를 입력하세요.
+Mac은 iTerm2, Windows는 Windows Terminal을 새로 열고 **`claude`를 입력**합니다. 로그인 후 Claude 대화 화면에 `오늘 뉴스 정리해서 알려줘`를 입력하세요.
 
 [Windows 완료 안내 캡처](docs/assets/windows-complete.jpg)
 
