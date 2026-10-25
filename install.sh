@@ -21,6 +21,7 @@ completed=0
 step_warnings=0
 step_started=0
 warnings=()
+homebrew_skipped=0
 status_monitor_pid=""
 cleanup_monitor() {
   if [[ -n "$status_monitor_pid" ]]; then
@@ -142,6 +143,183 @@ ensure_brew_in_path() {
   command -v brew &>/dev/null && get_brew_version &>/dev/null
 }
 
+# /usr/bin/git and /usr/bin/python3 are stubs until the Command Line Tools exist;
+# running them only opens Apple's install popup, so treat them as missing.
+is_clt_stub() {
+  [[ "$(command -v "$1" 2>/dev/null)" == "/usr/bin/$1" ]] && ! xcode-select -p &>/dev/null
+}
+
+# Rosetta shells report x86_64 from uname, so ask the hardware directly.
+is_apple_silicon() {
+  [[ "$(uname -m)" == "arm64" ]] || [[ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" == "1" ]]
+}
+
+# The official Homebrew installer refuses Intel Macs since 2026-09 (Homebrew/install#1140).
+homebrew_installable() {
+  is_apple_silicon
+}
+
+macos_at_least() {
+  local want_major="$1" want_minor="${2:-0}" version major minor
+  version=$(sw_vers -productVersion 2>/dev/null || true)
+  major=${version%%.*}
+  minor=${version#*.}
+  [[ "$minor" == "$version" ]] && minor=0
+  minor=${minor%%.*}
+  [[ "$major" =~ ^[0-9]+$ ]] || return 1
+  [[ "$minor" =~ ^[0-9]+$ ]] || minor=0
+  (( major > want_major || (major == want_major && minor >= want_minor) ))
+}
+
+sudo_ready=0
+ensure_sudo() {
+  if [[ $sudo_ready -eq 1 ]]; then
+    return 0
+  fi
+  echo "  입력 대기: Mac 로그인 비밀번호를 요청할 수 있습니다. 입력해도 글자가 보이지 않는 것은 정상입니다."
+  if sudo -v; then
+    sudo_ready=1
+    return 0
+  fi
+  return 1
+}
+
+download_verified() {
+  local url="$1" expected_sha="$2" dest="$3" actual_sha
+  if ! curl -fsSL --retry 2 "$url" -o "$dest"; then
+    return 1
+  fi
+  actual_sha=$(shasum -a 256 "$dest" 2>/dev/null) || return 1
+  [[ "${actual_sha%% *}" == "$expected_sha" ]]
+}
+
+# Without Homebrew, Node.js comes from the official nodejs.org installer package.
+install_node_from_pkg() {
+  local major base shasums pkg_line pkg_sha pkg_name work_dir node_ver result=0
+
+  if macos_at_least 13 5; then
+    major=24
+  elif macos_at_least 11 0; then
+    major=22
+  else
+    warn "Node.js: 이 macOS 버전은 공식 설치 파일이 지원하지 않습니다. macOS를 11 이상으로 업데이트한 뒤 같은 설치 명령으로 다시 시도하세요."
+    return 0
+  fi
+
+  base="https://nodejs.org/dist/latest-v${major}.x"
+  shasums=$(curl -fsSL --retry 2 "$base/SHASUMS256.txt" 2>/dev/null) || shasums=""
+  pkg_line=$(printf '%s\n' "$shasums" | grep -E '^[0-9a-f]{64}  node-v[0-9.]+\.pkg$' | head -n 1) || pkg_line=""
+  if [[ -z "$pkg_line" ]]; then
+    warn "Node.js: 공식 설치 파일 목록을 받지 못했습니다. https://nodejs.org 에서 LTS 설치 파일을 받아 설치할 수 있습니다."
+    return 0
+  fi
+  pkg_sha=${pkg_line%% *}
+  pkg_name=${pkg_line##* }
+
+  echo "  Node.js 공식 설치 파일($pkg_name)을 받아 설치합니다..."
+  work_dir=$(mktemp -d "${TMPDIR:-/tmp}/claude-setup-node.XXXXXX")
+  if ! download_verified "$base/$pkg_name" "$pkg_sha" "$work_dir/$pkg_name"; then
+    result=1
+  elif ! ensure_sudo; then
+    result=2
+  elif ! run_with_status sudo installer -pkg "$work_dir/$pkg_name" -target /; then
+    result=1
+  fi
+  rm -f "$work_dir/$pkg_name"
+  rmdir "$work_dir" 2>/dev/null || true
+
+  case ":$PATH:" in
+    *:/usr/local/bin:*) ;;
+    *) export PATH="$PATH:/usr/local/bin" ;;
+  esac
+  hash -r
+
+  if [[ $result -eq 0 ]] && node_ver=$(node -v 2>&1); then
+    ok "Node.js $node_ver 설치 완료"
+  elif [[ $result -eq 2 ]]; then
+    warn "Node.js: 관리자 인증에 실패했습니다."
+  else
+    warn "Node.js: 공식 설치 파일 설치 또는 실행 확인에 실패했습니다. https://nodejs.org 에서 LTS 설치 파일을 받아 설치할 수 있습니다."
+  fi
+}
+
+# Without Homebrew, Git and Python 3 come from Apple's Command Line Tools.
+# Same headless softwareupdate route the Homebrew installer uses.
+clt_attempted=0
+clt_ready=0
+install_command_line_tools() {
+  local placeholder="/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress"
+  local label
+
+  if [[ $clt_attempted -eq 1 ]]; then
+    [[ $clt_ready -eq 1 ]]
+    return
+  fi
+  clt_attempted=1
+
+  if xcode-select -p &>/dev/null; then
+    clt_ready=1
+    return 0
+  fi
+  if ! ensure_sudo; then
+    return 1
+  fi
+
+  echo "  macOS 기본 개발 도구(Command Line Tools)를 설치합니다. 몇 분 걸릴 수 있습니다..."
+  sudo touch "$placeholder" || true
+  label=$(softwareupdate -l 2>/dev/null |
+    grep -B 1 -E 'Command Line Tools' |
+    awk -F'*' '/^ *\*/ {print $2}' |
+    sed -e 's/^ *Label: //' -e 's/^ *//' |
+    sort -V |
+    tail -n 1) || label=""
+
+  if [[ -n "$label" ]] && run_with_status sudo softwareupdate -i "$label"; then
+    sudo xcode-select --switch /Library/Developer/CommandLineTools || true
+  fi
+  sudo rm -f "$placeholder" || true
+  hash -r
+
+  if xcode-select -p &>/dev/null; then
+    clt_ready=1
+    return 0
+  fi
+  return 1
+}
+
+# Pinned official builds per macOS floor; iTerm2 updates itself afterwards.
+install_iterm_from_zip() {
+  local zip_name zip_sha work_dir
+
+  if macos_at_least 13 0; then
+    zip_name="iTerm2-3_7_6.zip"
+    zip_sha="bb6102e9f57bbe41979ba7c7b1c25d4112e9a5c2142606eeccbe18dc7ee0706f"
+  elif macos_at_least 12 4; then
+    zip_name="iTerm2-3_6_11.zip"
+    zip_sha="36e78c5049560eaa8e122224f6652eb4b229c61cd5e7332d6d25b5c36f7398e7"
+  elif macos_at_least 10 15; then
+    zip_name="iTerm2-3_5_14.zip"
+    zip_sha="585bd119e4cf3a5e6bfa6f3b6afecf416f02e28f8d81a3a1e949855da058cbdd"
+  else
+    warn "iTerm2: 이 macOS 버전은 iTerm2를 지원하지 않습니다. 기본 터미널에서 claude를 실행하세요."
+    return 0
+  fi
+
+  echo "  iTerm2 공식 파일을 받아 설치합니다..."
+  mkdir -p "$HOME/Applications"
+  work_dir=$(mktemp -d "${TMPDIR:-/tmp}/claude-setup-iterm.XXXXXX")
+  if download_verified "https://iterm2.com/downloads/stable/$zip_name" "$zip_sha" "$work_dir/$zip_name" &&
+     ditto -x -k "$work_dir/$zip_name" "$HOME/Applications" &&
+     [[ -x "$HOME/Applications/iTerm.app/Contents/MacOS/iTerm2" ]]; then
+    iterm_app="$HOME/Applications/iTerm.app"
+    ok "iTerm2 앱 실행 파일 확인 완료"
+  else
+    warn "iTerm2: 설치 또는 앱 실행 파일 확인에 실패했습니다. https://iterm2.com/downloads.html 에서 설치할 수 있습니다."
+  fi
+  rm -f "$work_dir/$zip_name"
+  rmdir "$work_dir" 2>/dev/null || true
+}
+
 install_if_missing_node() {
   local node_ver
 
@@ -151,7 +329,7 @@ install_if_missing_node() {
   fi
 
   if ! ensure_brew_in_path; then
-    warn "Node.js: Homebrew가 없어 수동 설치가 필요합니다."
+    install_node_from_pkg
     return 0
   fi
 
@@ -166,13 +344,17 @@ install_if_missing_node() {
 install_if_missing_python() {
   local py_ver
 
-  if command -v python3 &>/dev/null && py_ver=$(python3 --version 2>&1); then
+  if command -v python3 &>/dev/null && ! is_clt_stub python3 && py_ver=$(python3 --version 2>&1); then
     skip "$py_ver"
     return 0
   fi
 
   if ! ensure_brew_in_path; then
-    warn "Python 3: Homebrew가 없어 수동 설치가 필요합니다."
+    if install_command_line_tools && py_ver=$(python3 --version 2>&1); then
+      ok "$py_ver 설치 완료 (macOS 기본 개발 도구)"
+    else
+      warn "Python 3: macOS 기본 개발 도구 설치에 실패했습니다. 터미널에 python3 --version 을 입력하면 macOS가 설치 창을 띄웁니다."
+    fi
     return 0
   fi
 
@@ -187,13 +369,17 @@ install_if_missing_python() {
 install_if_missing_git() {
   local git_ver
 
-  if command -v git &>/dev/null && git_ver=$(git --version 2>&1); then
+  if command -v git &>/dev/null && ! is_clt_stub git && git_ver=$(git --version 2>&1); then
     skip "$git_ver"
     return 0
   fi
 
   if ! ensure_brew_in_path; then
-    warn "Git: Homebrew가 없어 수동 설치가 필요합니다."
+    if install_command_line_tools && git_ver=$(git --version 2>&1); then
+      ok "$git_ver 설치 완료 (macOS 기본 개발 도구)"
+    else
+      warn "Git: macOS 기본 개발 도구 설치에 실패했습니다. 터미널에 git --version 을 입력하면 macOS가 설치 창을 띄웁니다."
+    fi
     return 0
   fi
 
@@ -386,6 +572,10 @@ if ensure_brew_in_path; then
   else
     warn "Homebrew: 새 터미널용 PATH 등록에 실패했습니다."
   fi
+elif ! homebrew_installable; then
+  homebrew_skipped=1
+  echo -e "  ${YELLOW}→${NC} 인텔 Mac은 Homebrew 공식 설치기가 더 이상 지원하지 않아 건너뜁니다."
+  echo "  다음 단계의 도구는 각 공식 설치 파일로 바로 설치합니다."
 else
   echo "  Homebrew를 설치합니다..."
   echo "  필요한 경우 Homebrew가 macOS 기본 개발 도구도 함께 설치합니다."
@@ -444,7 +634,7 @@ elif ensure_brew_in_path; then
     warn "iTerm2: 설치 또는 앱 실행 파일 확인에 실패했습니다. https://iterm2.com/downloads.html 에서 설치할 수 있습니다."
   fi
 else
-  warn "iTerm2: Homebrew가 없어 자동 설치하지 못했습니다. https://iterm2.com/downloads.html 에서 설치할 수 있습니다."
+  install_iterm_from_zip
 fi
 # ── 7. 사용량 모드 ──
 progress "사용량 모드" "Claude 사용 한도와 대화 상태를 표시합니다. 터미널 꾸미기와는 별개입니다."
@@ -492,6 +682,8 @@ echo ""
 echo -e "  설치된 항목:"
 if command -v brew &>/dev/null && brew_ver=$(get_brew_version); then
   echo -e "  ${GREEN}✓${NC} Homebrew  $brew_ver"
+elif [[ $homebrew_skipped -eq 1 ]]; then
+  echo -e "  ${YELLOW}→${NC} Homebrew  인텔 Mac이라 생략 (도구는 공식 설치 파일로 설치)"
 else
   echo -e "  ${YELLOW}✗${NC} Homebrew  미설치"
 fi
@@ -500,12 +692,12 @@ if command -v node &>/dev/null && node_ver=$(node -v 2>&1); then
 else
   echo -e "  ${YELLOW}✗${NC} Node.js   미설치"
 fi
-if command -v python3 &>/dev/null && py_ver=$(python3 --version 2>&1); then
+if command -v python3 &>/dev/null && ! is_clt_stub python3 && py_ver=$(python3 --version 2>&1); then
   echo -e "  ${GREEN}✓${NC} Python    $py_ver"
 else
   echo -e "  ${YELLOW}✗${NC} Python    미설치"
 fi
-if command -v git &>/dev/null && git_ver=$(git --version 2>&1); then
+if command -v git &>/dev/null && ! is_clt_stub git && git_ver=$(git --version 2>&1); then
   echo -e "  ${GREEN}✓${NC} Git       $git_ver"
 else
   echo -e "  ${YELLOW}✗${NC} Git       미설치"

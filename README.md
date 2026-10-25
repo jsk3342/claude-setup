@@ -83,7 +83,8 @@ Mac은 새 macOS 26.6.2 arm64 VM에서 설치·재설치·새 셸 실행·설정
 - 실제 Claude Code 버전 확인과 새 터미널의 PATH 확인이 모두 통과해야 완료로 판정합니다
 - Homebrew가 없는 macOS에서는 관리자 인증 후 공식 설치기를 사용합니다
 - Homebrew에 필요한 macOS 기본 개발 도구는 Homebrew 공식 설치기가 함께 처리합니다
-- Homebrew, Node.js, Python 3, Git 중 하나라도 실행 확인에 실패하면 전체 완료로 판정하지 않습니다
+- 인텔 Mac은 Homebrew 공식 설치기가 2026년 9월부터 지원하지 않아 Homebrew를 건너뛰고, Node.js는 nodejs.org 공식 설치 파일, Git·Python 3는 macOS 기본 개발 도구, iTerm2는 공식 zip(체크섬 확인)으로 설치합니다. Apple Silicon에서 Homebrew 설치가 실패해도 같은 방식으로 이어서 설치합니다
+- Homebrew(인텔 Mac 제외), Node.js, Python 3, Git 중 하나라도 실행 확인에 실패하면 전체 완료로 판정하지 않습니다
 - 개발 환경 일부가 실패해도 먼저 설치된 Claude Code는 사용할 수 있습니다
 
 ## 설치 후 첫 실행

@@ -398,8 +398,16 @@ if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot 'usage-mode\install.m
 try {
     if ($modeTemp) {
         $ref = if ($env:CLAUDE_SETUP_REF) { $env:CLAUDE_SETUP_REF } else { 'main' }
-        foreach ($asset in @('install.mjs', 'usage-line.mjs', 'render.mjs', 'LICENSE')) {
-            Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/jsk3342/claude-setup/$ref/usage-mode/$asset" -OutFile (Join-Path $modeSource $asset)
+        # Windows PowerShell 5.1 can throw IndexOutOfRangeException while drawing the
+        # download progress bar under our Korean step bar; the download itself is tiny.
+        $savedProgress = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'
+        try {
+            foreach ($asset in @('install.mjs', 'usage-line.mjs', 'render.mjs', 'LICENSE')) {
+                Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/jsk3342/claude-setup/$ref/usage-mode/$asset" -OutFile (Join-Path $modeSource $asset)
+            }
+        } finally {
+            $ProgressPreference = $savedProgress
         }
     }
     & node (Join-Path $modeSource 'install.mjs')
