@@ -218,7 +218,7 @@ install_node_from_pkg() {
 
   echo "  Node.js 공식 설치 파일($pkg_name)을 받아 설치합니다..."
   work_dir=$(mktemp -d "${TMPDIR:-/tmp}/claude-setup-node.XXXXXX")
-  if ! download_verified "$base/$pkg_name" "$pkg_sha" "$work_dir/$pkg_name"; then
+  if ! run_with_status download_verified "$base/$pkg_name" "$pkg_sha" "$work_dir/$pkg_name"; then
     result=1
   elif ! ensure_sudo; then
     result=2
@@ -308,7 +308,7 @@ install_iterm_from_zip() {
   echo "  iTerm2 공식 파일을 받아 설치합니다..."
   mkdir -p "$HOME/Applications"
   work_dir=$(mktemp -d "${TMPDIR:-/tmp}/claude-setup-iterm.XXXXXX")
-  if download_verified "https://iterm2.com/downloads/stable/$zip_name" "$zip_sha" "$work_dir/$zip_name" &&
+  if run_with_status download_verified "https://iterm2.com/downloads/stable/$zip_name" "$zip_sha" "$work_dir/$zip_name" &&
      ditto -x -k "$work_dir/$zip_name" "$HOME/Applications" &&
      [[ -x "$HOME/Applications/iTerm.app/Contents/MacOS/iTerm2" ]]; then
     iterm_app="$HOME/Applications/iTerm.app"
@@ -471,6 +471,11 @@ verify_claude_code() {
   esac
 }
 
+# The official installer downloads a ~280MB binary with no output of its own.
+install_claude_official() {
+  curl -fsSL https://claude.ai/install.sh | /bin/bash -s stable
+}
+
 verify_claude_in_fresh_shell() {
   local expected_path="$1"
   local shell_path="${SHELL:-/bin/zsh}"
@@ -537,8 +542,8 @@ else
     fi
   fi
 
-  echo "  Claude Code를 설치합니다..."
-  if ! curl -fsSL https://claude.ai/install.sh | /bin/bash -s stable; then
+  echo "  Claude Code를 설치합니다... (약 280MB를 받는 동안 1~3분 정도 새 글이 없을 수 있습니다)"
+  if ! run_with_status install_claude_official; then
     fail "Claude Code 설치가 실패했습니다."
   fi
 

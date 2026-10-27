@@ -57,6 +57,16 @@ if grep -Fq 'xcode-select --install' "$repo_dir/install.sh"; then
   exit 1
 fi
 
+# Silent downloads must keep the elapsed-time line so a beginner can tell it is not frozen.
+if ! grep -Fq 'run_with_status install_claude_official' "$repo_dir/install.sh"; then
+  printf '%s\n' "FAIL: the silent Claude Code download runs without the elapsed-time line" >&2
+  exit 1
+fi
+if grep -E 'download_verified "' "$repo_dir/install.sh" | grep -vq 'run_with_status download_verified'; then
+  printf '%s\n' "FAIL: a silent tool download runs without the elapsed-time line" >&2
+  exit 1
+fi
+
 tool_bin="$tool_home/bin"
 mkdir -p "$tool_home/.local/bin" "$tool_bin"
 
