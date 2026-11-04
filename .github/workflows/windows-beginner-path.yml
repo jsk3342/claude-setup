@@ -73,6 +73,15 @@ jobs:
           $installerUrl = "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1"
           irm $installerUrl | iex
 
+      - name: Installer draws no progress bar
+        shell: powershell
+        run: |
+          # Windows PowerShell 5.1 can abort on Korean consoles while saving the screen under a progress bar.
+          # A hosted English runner does not reproduce that crash, so this guards the fix statically.
+          $source = [IO.File]::ReadAllText("$PWD\install.ps1", [Text.Encoding]::UTF8)
+          if ($source -match 'Write-Progress' -or $source.Contains([string][char]0x2501)) { throw "install.ps1 draws a progress bar or wide separator." }
+          if ($source -notmatch "(?m)^\`$ProgressPreference = 'SilentlyContinue'") { throw "install.ps1 must turn progress bars off." }
+
       - name: Rerun installer skips everything
         shell: powershell
         run: |

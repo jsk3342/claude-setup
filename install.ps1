@@ -5,19 +5,23 @@
 
 $ErrorActionPreference = "Stop"
 
+# Windows PowerShell 5.1의 진행 막대는 한국어 콘솔에서 화면을 저장하다 IndexOutOfRangeException을 낼 수 있고,
+# 위의 Stop 때문에 설치 전체가 끊긴다. 단계는 아래 글로 보여 주므로 막대를 쓰지 않는다.
+$savedProgressPreference = $ProgressPreference
+$ProgressPreference = 'SilentlyContinue'
+
 # ── 색상 함수 ──
 function Write-Step {
     param([int]$Num, [int]$Total, [string]$Message, [string]$Reason)
     Write-Host ""
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
+    Write-Host "========================================" -ForegroundColor Blue
     $done = $Num - 1
     $bar = ('■' * $done) + ('□' * ($Total - $done))
-    Write-Progress -Id 71 -Activity 'Claude Code 올인원 설치' -Status "$Message · 진행 중" -PercentComplete ([int](100 * $done / $Total))
     Write-Host "  확인 완료 [$bar] $done/$Total (시간 진행률이 아닙니다)"
     Write-Host "  이유: $Reason"
     Write-Host "[$Num/$Total] $Message · 진행 중" -ForegroundColor White -NoNewline
     Write-Host "" -ForegroundColor White
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
+    Write-Host "========================================" -ForegroundColor Blue
 }
 
 function Write-Ok {
@@ -33,7 +37,7 @@ function Write-Skip {
 function Write-Fail {
     param([string]$Message)
     Write-Host "  ✗ $Message" -ForegroundColor Red
-    Write-Progress -Id 71 -Activity 'Claude Code 올인원 설치' -Completed
+    $global:ProgressPreference = $savedProgressPreference
     # irm | iex로 실행되면 exit가 사용자 PowerShell 창을 닫아 안내를 못 읽는다. throw는 창을 남긴다.
     throw "설치를 중단했습니다."
 }
@@ -398,16 +402,8 @@ if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot 'usage-mode\install.m
 try {
     if ($modeTemp) {
         $ref = if ($env:CLAUDE_SETUP_REF) { $env:CLAUDE_SETUP_REF } else { 'main' }
-        # Windows PowerShell 5.1 can throw IndexOutOfRangeException while drawing the
-        # download progress bar under our Korean step bar; the download itself is tiny.
-        $savedProgress = $ProgressPreference
-        $ProgressPreference = 'SilentlyContinue'
-        try {
-            foreach ($asset in @('install.mjs', 'usage-line.mjs', 'render.mjs', 'LICENSE')) {
-                Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/jsk3342/claude-setup/$ref/usage-mode/$asset" -OutFile (Join-Path $modeSource $asset)
-            }
-        } finally {
-            $ProgressPreference = $savedProgress
+        foreach ($asset in @('install.mjs', 'usage-line.mjs', 'render.mjs', 'LICENSE')) {
+            Invoke-WebRequest -UseBasicParsing "https://raw.githubusercontent.com/jsk3342/claude-setup/$ref/usage-mode/$asset" -OutFile (Join-Path $modeSource $asset)
         }
     }
     & node (Join-Path $modeSource 'install.mjs')
@@ -416,7 +412,7 @@ try {
     if ($modeTemp) { Remove-Item -LiteralPath $modeTemp -Recurse -Force -ErrorAction SilentlyContinue }
 }
 Write-Ok "사용량 모드 설치 및 설정 연결 확인"
-Write-Progress -Id 71 -Activity 'Claude Code 올인원 설치' -Completed
+$global:ProgressPreference = $savedProgressPreference
 Write-Host "  확인 완료 [■■■■■■■] 7/7"
 
 # ── 완료 ──
@@ -431,9 +427,9 @@ Write-Host "  ✓ Windows Terminal (기존 꾸미기 유지)" -ForegroundColor G
 Write-Host "  ✓ 사용량 모드" -ForegroundColor Green
 
 Write-Host ""
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
+Write-Host "========================================" -ForegroundColor Blue
 Write-Host "  ✅ 설치가 모두 완료되었습니다!" -ForegroundColor Green
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
+Write-Host "========================================" -ForegroundColor Blue
 
 Write-Host ""
 Write-Host "  다음 단계:" -ForegroundColor White
