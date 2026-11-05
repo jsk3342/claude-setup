@@ -8,6 +8,12 @@ on:
   push:
     branches:
       - "verify/**"
+      - main
+    paths:
+      - install.ps1
+      - usage-mode/**
+      - tests/windows-failure-report.ps1
+      - .github/workflows/windows-beginner-path.yml
 
 permissions:
   contents: read
