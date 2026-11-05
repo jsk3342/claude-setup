@@ -30,7 +30,52 @@ cleanup_monitor() {
     status_monitor_pid=""
   fi
 }
-trap cleanup_monitor EXIT
+
+current_step_label="시작 전"
+failure_message=""
+
+# 끊기거나 일부만 끝나면 고객이 여러 번 나눠 붙여넣지 않도록 진단 내용을 한 덩어리로 보여 준다.
+print_failure_report() {
+  local result="중단됨" errors="$failure_message" item report
+  if [[ ${#warnings[@]} -gt 0 ]]; then
+    for item in "${warnings[@]}"; do
+      errors+="${errors:+ / }$item"
+    done
+  fi
+  if [[ -z "$failure_message" && ${#warnings[@]} -gt 0 ]]; then
+    result="일부 미완료"
+  fi
+  errors=${errors:-"화면 위쪽 오류를 확인해 주세요 (종료 코드 $1)"}
+  errors=${errors//$HOME/\~}
+  report="---------- 설치 실패 보고 시작 ----------
+설치기: claude-setup (맥)
+결과: $result
+단계: $current_step_label
+오류: $errors
+걸린 시간: ${SECONDS}초
+OS: macOS $(sw_vers -productVersion 2>/dev/null || echo 알 수 없음)
+칩: $(uname -m 2>/dev/null || echo 알 수 없음)
+셸: bash $BASH_VERSION
+---------- 설치 실패 보고 끝 ----------"
+  echo ""
+  printf '%s\n' "$report"
+  if command -v pbcopy >/dev/null 2>&1 && printf '%s\n' "$report" | pbcopy 2>/dev/null \
+    && [[ "$(pbpaste 2>/dev/null)" == "$report" ]]; then
+    echo "  위 보고를 복사해 두었습니다. 설치 도우미 입력칸에 그대로 붙여넣어 주세요."
+  else
+    echo "  위 보고를 시작 줄부터 끝 줄까지 복사해 설치 도우미 입력칸에 붙여넣어 주세요."
+  fi
+}
+
+on_exit() {
+  local status=$?
+  cleanup_monitor
+  # 130·143은 사용자가 직접 멈춘 경우라 실패 보고를 내지 않는다.
+  if [[ $status -ne 0 && $status -ne 130 && $status -ne 143 ]]; then
+    print_failure_report "$status"
+  fi
+}
+trap on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
@@ -50,6 +95,7 @@ progress() {
   step=$((step + 1))
   step_warnings=${#warnings[@]}
   step_started=$SECONDS
+  current_step_label="$step/$total $1"
   local bar="" i
   for ((i=0; i<total; i++)); do
     if [[ $i -lt $completed ]]; then bar+="■"; else bar+="□"; fi
@@ -89,6 +135,7 @@ skip() {
 
 fail() {
   echo -e "  ${RED}✗${NC} $1"
+  failure_message="$1"
   exit 1
 }
 

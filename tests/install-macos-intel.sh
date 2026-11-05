@@ -127,6 +127,10 @@ SCRIPT
 echo "Python 3.9.6"
 SCRIPT
 
+  # The failure report copies itself; tests must never touch the real clipboard of this machine.
+  printf '#!/bin/bash\ncat >/dev/null\n' > "$bin/pbcopy"
+  printf '#!/bin/bash\nexit 0\n' > "$bin/pbpaste"
+
   chmod +x "$bin"/*
 }
 

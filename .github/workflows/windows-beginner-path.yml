@@ -13,6 +13,19 @@ permissions:
   contents: read
 
 jobs:
+  # A separate machine: this job hides tools and fakes scoop, which must not touch the real install path below.
+  failure-report:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the matching test code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Failing install shows the report and leaves the window clean
+        shell: powershell
+        run: .\tests\windows-failure-report.ps1
+
   beginner-path:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -90,7 +103,13 @@ jobs:
           $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "Machine")
           $env:CLAUDE_SETUP_REF = $env:GITHUB_SHA
           $installerUrl = "https://raw.githubusercontent.com/$env:GITHUB_REPOSITORY/$env:GITHUB_SHA/install.ps1"
-          irm $installerUrl | iex
+          $log = Join-Path $env:RUNNER_TEMP 'rerun.log'
+          irm $installerUrl | iex *>&1 | Tee-Object -FilePath $log
+          $done = -join ([char[]](0xC124,0xCE58,0xAC00,0x20,0xBAA8,0xB450,0x20,0xC644,0xB8CC))
+          $failed = -join ([char[]](0xC124,0xCE58,0x20,0xC2E4,0xD328,0x20,0xBCF4,0xACE0))
+          $out = Get-Content $log -Raw
+          if ($out -notmatch $done) { throw "A successful install did not print the completion line." }
+          if ($out -match $failed) { throw "A successful install printed a failure report." }
 
       - name: Verify a new PowerShell sees every tool
         shell: powershell
