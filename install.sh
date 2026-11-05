@@ -765,7 +765,8 @@ else
   echo "  iTerm2 수동 설치 전에도 새 기본 터미널에서 Claude Code를 실행할 수 있습니다."
 fi
 echo -e "  ${BOLD}새 터미널 창에서${NC} ${YELLOW}claude${NC} 를 입력하세요."
-echo -e "  처음 실행하면 Anthropic 계정 연결을 안내합니다."
+echo "  처음 실행하면 영어 화면이 몇 개 나옵니다. 로그인 방법은 1번을 고르세요."
+echo '  "Quick safety check"에서는 그대로 Enter를 누르면 꺼지니, 아래 화살표로 Yes를 고른 뒤 Enter를 누르세요.'
 echo "  로그인 후 Claude 대화 화면에: 오늘 뉴스 정리해서 알려줘"
 echo "  설치 명령은 터미널에, 이 요청은 Claude 대화 화면에 입력합니다."
 echo "  다음에 사용할 때도 iTerm2를 열고 claude를 입력하면 됩니다. 다시 설치하지 않습니다."

@@ -507,7 +507,8 @@ Write-Host "  다음 단계:" -ForegroundColor White
 Write-Host "  새 Windows Terminal을 열고 " -NoNewline
 Write-Host "claude" -ForegroundColor Yellow -NoNewline
 Write-Host " 를 입력하세요."
-Write-Host "  처음 실행하면 Anthropic 계정 연결을 안내합니다."
+Write-Host "  처음 실행하면 영어 화면이 몇 개 나옵니다. 로그인 방법은 1번을 고르세요."
+Write-Host '  "Quick safety check"에서는 그대로 Enter를 누르면 꺼지니, 아래 화살표로 Yes를 고른 뒤 Enter를 누르세요.'
 Write-Host "  로그인 후 Claude 대화 화면에: 오늘 뉴스 정리해서 알려줘"
 Write-Host "  설치 명령은 PowerShell에, 이 요청은 Claude 대화 화면에 입력합니다."
 Write-Host "  다음에도 Windows Terminal을 열고 claude를 입력하면 됩니다. 다시 설치하지 않습니다."
