@@ -10,9 +10,78 @@ $ErrorActionPreference = "Stop"
 $savedProgressPreference = $ProgressPreference
 $ProgressPreference = 'SilentlyContinue'
 
+$script:installStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+$script:currentStepLabel = "시작 전"
+$script:stepHeartbeat = $null
+
+# 설치 명령이 조용히 도는 동안 멈춘 것처럼 보이지 않게 15초마다 경과 시간을 찍는다.
+# 공식 설치기를 이 창에서 그대로 돌리므로, 별도 실행 공간에서 콘솔에 직접 쓴다.
+function Stop-StepHeartbeat {
+    if ($null -ne $script:stepHeartbeat) {
+        $script:stepHeartbeat.Stop()
+        $script:stepHeartbeat.Dispose()
+        $script:stepHeartbeat = $null
+    }
+}
+
+function Start-StepHeartbeat {
+    Stop-StepHeartbeat
+    $heartbeat = [powershell]::Create()
+    $null = $heartbeat.AddScript({
+        $watch = [System.Diagnostics.Stopwatch]::StartNew()
+        # 정리가 어떻게든 빠져도 사용자 창에 영원히 찍히지 않도록 상한을 둔다.
+        while ($watch.Elapsed.TotalMinutes -lt 60) {
+            Start-Sleep -Seconds 15
+            # 다른 프로그램이 줄을 끝내지 않은 채 쓰는 중이면 줄을 바꿔 글이 이어 붙지 않게 한다.
+            try { if ([Console]::CursorLeft -gt 0) { [Console]::WriteLine() } } catch { }
+            [Console]::WriteLine("  설치 작업 실행 중 · 경과 $([int]$watch.Elapsed.TotalSeconds)초 · 완료 문구를 기다려주세요.")
+        }
+    })
+    $null = $heartbeat.BeginInvoke()
+    $script:stepHeartbeat = $heartbeat
+}
+
+# 실패하면 고객이 여러 번 나눠 붙여넣지 않도록 진단에 필요한 내용을 한 덩어리로 보여 준다.
+function Write-FailureReport {
+    param([string]$Message)
+    $safeMessage = $Message
+    if ($env:USERPROFILE) { $safeMessage = $safeMessage.Replace($env:USERPROFILE, '~') }
+    $safeMessage = ($safeMessage -replace '\s+', ' ').Trim()
+    if ($safeMessage.Length -gt 800) { $safeMessage = $safeMessage.Substring(0, 800) + ' ...' }
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $width = try { $Host.UI.RawUI.BufferSize.Width } catch { '알 수 없음' }
+    $report = @(
+        '---------- 설치 실패 보고 시작 ----------'
+        '설치기: claude-setup (윈도우)'
+        '결과: 중단됨'
+        "단계: $script:currentStepLabel"
+        "오류: $safeMessage"
+        "걸린 시간: $([int]$script:installStopwatch.Elapsed.TotalSeconds)초"
+        "OS: Windows $([System.Environment]::OSVersion.Version)"
+        "칩: $env:PROCESSOR_ARCHITECTURE"
+        "PowerShell: $($PSVersionTable.PSVersion) / 코드페이지 $([Console]::OutputEncoding.CodePage) / 창 폭 $width / 관리자 $isAdmin"
+        '---------- 설치 실패 보고 끝 ----------'
+    ) -join "`r`n"
+    Write-Host ""
+    Write-Host $report
+    $copied = $false
+    try {
+        Set-Clipboard -Value $report
+        $copied = ((Get-Clipboard -Raw).Trim() -eq $report.Trim())
+    }
+    catch { $copied = $false }
+    if ($copied) {
+        Write-Host "  위 보고를 복사해 두었습니다. 설치 도우미 입력칸에 그대로 붙여넣어 주세요." -ForegroundColor Yellow
+    } else {
+        Write-Host "  위 보고를 시작 줄부터 끝 줄까지 복사해 설치 도우미 입력칸에 붙여넣어 주세요." -ForegroundColor Yellow
+    }
+}
+
 # ── 색상 함수 ──
 function Write-Step {
     param([int]$Num, [int]$Total, [string]$Message, [string]$Reason)
+    $script:currentStepLabel = "$Num/$Total $Message"
+    Start-StepHeartbeat
     Write-Host ""
     Write-Host "========================================" -ForegroundColor Blue
     $done = $Num - 1
@@ -37,9 +106,8 @@ function Write-Skip {
 function Write-Fail {
     param([string]$Message)
     Write-Host "  ✗ $Message" -ForegroundColor Red
-    $global:ProgressPreference = $savedProgressPreference
     # irm | iex로 실행되면 exit가 사용자 PowerShell 창을 닫아 안내를 못 읽는다. throw는 창을 남긴다.
-    throw "설치를 중단했습니다."
+    throw $Message
 }
 
 function Test-Command {
@@ -165,6 +233,9 @@ function Test-SamePath {
         return $false
     }
 }
+
+# 어떤 이유로 끊겨도 경과 표시를 멈추고 호출한 창의 설정을 돌려놓는다. 들여쓰기는 바꾸지 않는다.
+try {
 
 Write-Host ""
 Write-Host "🚀 클로드 코드 올인원 설치를 시작합니다" -ForegroundColor White
@@ -412,8 +483,8 @@ try {
     if ($modeTemp) { Remove-Item -LiteralPath $modeTemp -Recurse -Force -ErrorAction SilentlyContinue }
 }
 Write-Ok "사용량 모드 설치 및 설정 연결 확인"
-$global:ProgressPreference = $savedProgressPreference
-Write-Host "  확인 완료 [■■■■■■■] 7/7"
+Stop-StepHeartbeat
+Write-Host "  확인 완료 [■■■■■■■] 7/7 · 걸린 시간 $([int]$script:installStopwatch.Elapsed.TotalSeconds)초"
 
 # ── 완료 ──
 Write-Host ""
@@ -449,3 +520,14 @@ Write-Host "  브라우저가 안 열리면 로그인 화면에서 " -NoNewline
 Write-Host "c" -ForegroundColor Yellow -NoNewline
 Write-Host " 를 눌러 주소를 복사한 뒤 Chrome에 붙여넣으세요."
 Write-Host ""
+
+}
+catch {
+    Stop-StepHeartbeat
+    Write-FailureReport -Message $_.Exception.Message
+    throw "설치를 중단했습니다. 위의 실패 보고를 설치 도우미에 붙여넣어 주세요."
+}
+finally {
+    Stop-StepHeartbeat
+    $ProgressPreference = $savedProgressPreference
+}

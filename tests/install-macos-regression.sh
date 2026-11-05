@@ -34,7 +34,10 @@ claude() { printf '%s\n' "2.1.212 (Claude Code)"; }
 curl() { return 22; }
 sleep() { return 0; }
 kill() { return 1; }
-export -f sudo xcode-select sw_vers uname brew node python3 git claude curl sleep kill
+# The failure report copies itself; tests must never touch the real clipboard of this machine.
+pbcopy() { cat >/dev/null; }
+pbpaste() { return 0; }
+export -f sudo xcode-select sw_vers uname brew node python3 git claude curl sleep kill pbcopy pbpaste
 
 set +e
 install_output=$(HOME="$test_home" SHELL=/bin/bash /bin/bash "$repo_dir/install.sh" 2>&1)
@@ -119,11 +122,21 @@ cat > "$tool_bin/git" <<'SCRIPT'
 printf '%s\n' "git version 2.50.0"
 SCRIPT
 
-chmod +x "$tool_home/.local/bin/claude" "$tool_bin/brew" "$tool_bin/node" "$tool_bin/python3" "$tool_bin/git"
+# A clipboard that works, kept in a file inside the test folder.
+cat > "$tool_bin/pbcopy" <<'SCRIPT'
+#!/bin/bash
+cat > "$(dirname "$0")/clipboard.txt"
+SCRIPT
+cat > "$tool_bin/pbpaste" <<'SCRIPT'
+#!/bin/bash
+cat "$(dirname "$0")/clipboard.txt"
+SCRIPT
+
+chmod +x "$tool_home/.local/bin/claude" "$tool_bin/brew" "$tool_bin/node" "$tool_bin/python3" "$tool_bin/git" "$tool_bin/pbcopy" "$tool_bin/pbpaste"
 
 set +e
 tool_output=$(
-  unset -f sudo xcode-select brew node python3 git claude curl sleep kill
+  unset -f sudo xcode-select brew node python3 git claude curl sleep kill pbcopy pbpaste
   HOME="$tool_home" SHELL=/bin/bash PATH="$tool_bin:/usr/bin:/bin:/usr/sbin:/sbin" /bin/bash "$repo_dir/install.sh" 2>&1
 )
 tool_status=$?
@@ -139,7 +152,7 @@ cp "$tool_bin/node" "$tool_bin/node-template"
 rm -f "$tool_bin/node"
 set +e
 partial_output=$(
-  unset -f sudo xcode-select brew node python3 git claude curl sleep kill
+  unset -f sudo xcode-select brew node python3 git claude curl sleep kill pbcopy pbpaste
   HOME="$tool_home" SHELL=/bin/bash PATH="$tool_bin:/usr/bin:/bin:/usr/sbin:/sbin" FAKE_BREW_FAIL_NODE=1 /bin/bash "$repo_dir/install.sh" 2>&1
 )
 partial_status=$?
@@ -153,6 +166,43 @@ fi
 if [[ "$partial_output" != *"Node.js: Homebrew 설치 또는 실행 확인에 실패했습니다"* ]]; then
   printf '%s\n' "$partial_output"
   printf '%s\n' "FAIL: the Node.js failure was not included in the final result" >&2
+  exit 1
+fi
+
+# A partial install must end with one block a beginner can paste into the helper.
+partial_report=$(printf '%s\n' "$partial_output" | sed -n '/설치 실패 보고 시작/,/설치 실패 보고 끝/p')
+for expected in "설치기: claude-setup (맥)" "결과: 일부 미완료" "단계: 끝까지 진행함" "Node.js: Homebrew 설치 또는 실행 확인에 실패했습니다" "걸린 시간: " "OS: macOS " "칩: " "셸: bash "; do
+  if [[ "$partial_report" != *"$expected"* ]]; then
+    printf '%s\n' "$partial_output"
+    printf '%s\n' "FAIL: the failure report is missing: $expected" >&2
+    exit 1
+  fi
+done
+if [[ "$partial_report" == *"$tool_home"* ]]; then
+  printf '%s\n' "$partial_report"
+  printf '%s\n' "FAIL: the failure report exposes the home folder" >&2
+  exit 1
+fi
+if [[ "$tool_output" == *"설치 실패 보고"* ]]; then
+  printf '%s\n' "$tool_output"
+  printf '%s\n' "FAIL: a successful install printed a failure report" >&2
+  exit 1
+fi
+if [[ "$(cat "$tool_bin/clipboard.txt")" != "$partial_report" ]] || [[ "$partial_output" != *"복사해 두었습니다"* ]]; then
+  printf '%s\n' "$partial_output"
+  printf '%s\n' "FAIL: the report was not copied, or the screen did not say so" >&2
+  exit 1
+fi
+# With no working clipboard the screen must not claim it copied anything.
+if [[ "$install_output" == *"복사해 두었습니다"* ]] || [[ "$install_output" != *"시작 줄부터 끝 줄까지 복사해"* ]]; then
+  printf '%s\n' "$install_output"
+  printf '%s\n' "FAIL: the screen claimed a copy that did not happen" >&2
+  exit 1
+fi
+# An unexpected stop (not a warning) must report too, with the step it stopped on.
+if [[ "$install_output" != *"설치 실패 보고 시작"* ]] || [[ "$install_output" != *"단계: "*"/7 "* ]]; then
+  printf '%s\n' "$install_output"
+  printf '%s\n' "FAIL: a stopped install did not print a failure report with its step" >&2
   exit 1
 fi
 
@@ -178,7 +228,7 @@ fi
 # Missing Node must install without waiting for an unannounced y/n prompt.
 set +e
 confirmed_output=$(
-  unset -f sudo xcode-select brew node python3 git claude curl sleep kill
+  unset -f sudo xcode-select brew node python3 git claude curl sleep kill pbcopy pbpaste
   HOME="$tool_home" SHELL=/bin/bash PATH="$tool_bin:/usr/bin:/bin:/usr/sbin:/sbin" /bin/bash "$repo_dir/install.sh" 2>&1
 )
 confirmed_status=$?
