@@ -44,6 +44,8 @@ print_failure_report() {
   fi
   if [[ -z "$failure_message" && ${#warnings[@]} -gt 0 ]]; then
     result="일부 미완료"
+    # 항목마다 이름이 적혀 있어, 마지막 단계 이름을 적으면 오히려 헷갈린다.
+    current_step_label="끝까지 진행함"
   fi
   errors=${errors:-"화면 위쪽 오류를 확인해 주세요 (종료 코드 $1)"}
   errors=${errors//$HOME/\~}

@@ -32,6 +32,8 @@ function Start-StepHeartbeat {
         # 정리가 어떻게든 빠져도 사용자 창에 영원히 찍히지 않도록 상한을 둔다.
         while ($watch.Elapsed.TotalMinutes -lt 60) {
             Start-Sleep -Seconds 15
+            # 다른 프로그램이 줄을 끝내지 않은 채 쓰는 중이면 줄을 바꿔 글이 이어 붙지 않게 한다.
+            try { if ([Console]::CursorLeft -gt 0) { [Console]::WriteLine() } } catch { }
             [Console]::WriteLine("  설치 작업 실행 중 · 경과 $([int]$watch.Elapsed.TotalSeconds)초 · 완료 문구를 기다려주세요.")
         }
     })

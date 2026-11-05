@@ -171,7 +171,7 @@ fi
 
 # A partial install must end with one block a beginner can paste into the helper.
 partial_report=$(printf '%s\n' "$partial_output" | sed -n '/설치 실패 보고 시작/,/설치 실패 보고 끝/p')
-for expected in "설치기: claude-setup (맥)" "결과: 일부 미완료" "Node.js: Homebrew 설치 또는 실행 확인에 실패했습니다" "걸린 시간: " "OS: macOS " "칩: " "셸: bash "; do
+for expected in "설치기: claude-setup (맥)" "결과: 일부 미완료" "단계: 끝까지 진행함" "Node.js: Homebrew 설치 또는 실행 확인에 실패했습니다" "걸린 시간: " "OS: macOS " "칩: " "셸: bash "; do
   if [[ "$partial_report" != *"$expected"* ]]; then
     printf '%s\n' "$partial_output"
     printf '%s\n' "FAIL: the failure report is missing: $expected" >&2
