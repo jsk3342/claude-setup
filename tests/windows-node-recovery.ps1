@@ -7,7 +7,7 @@ $source = [IO.File]::ReadAllText((Join-Path (Split-Path $PSScriptRoot -Parent) '
 $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseInput($source, [ref]$null, [ref]$parseErrors)
 if ($parseErrors) { throw ($parseErrors.Message -join '; ') }
-foreach ($name in 'Get-NodeVersion', 'Find-UsableNode', 'Invoke-NodeScoop', 'Ensure-Node') {
+foreach ($name in 'Get-NodeVersion', 'Find-UsableNode', 'Invoke-ScoopApp', 'Ensure-Node') {
     $fn = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
     . ([scriptblock]::Create($fn.Extent.Text))
 }
@@ -33,7 +33,7 @@ try {
     function Write-Skip($Message) { Write-Host $Message }
     function Write-Ok($Message) { Write-Host $Message }
     function Write-Fail($Message) { throw $Message }
-    function Invoke-NodeScoop($Action) { throw 'Should not install an already usable Node' }
+    function Invoke-ScoopApp($Action) { throw 'Should not install an already usable Node' }
     $version = Ensure-Node
     Check 'existing binary repairs PATH and runs by name' ($version -eq $realVersion -and $script:addedPath -eq $nodeDir -and (& node --version) -eq $realVersion)
 
@@ -50,7 +50,7 @@ try {
         if ($script:findCalls -ge 2) { return [PSCustomObject]@{ Path = $testNode; Version = $realVersion } }
         return $null
     }
-    function Invoke-NodeScoop($Action) { $script:actions += $Action; return [PSCustomObject]@{ ExitCode = 0; Output = 'installed' } }
+    function Invoke-ScoopApp($Action) { $script:actions += $Action; return [PSCustomObject]@{ ExitCode = 0; Output = 'installed' } }
     Check 'fresh installation verifies the executable' ((Ensure-Node) -eq $realVersion -and ($script:actions -join ',') -eq 'install')
 
     $script:findCalls = 0
@@ -63,7 +63,7 @@ try {
     Check 'already-installed but unlinked Node gets a targeted reset' ((Ensure-Node) -eq $realVersion -and ($script:actions -join ',') -eq 'install,reset')
 
     function Find-UsableNode { return $null }
-    function Invoke-NodeScoop($Action) { return [PSCustomObject]@{ ExitCode = 23; Output = 'DOWNLOAD_FAILED original cause' } }
+    function Invoke-ScoopApp($Action) { return [PSCustomObject]@{ ExitCode = 23; Output = 'DOWNLOAD_FAILED original cause' } }
     function Install-OfficialNode { throw 'OFFICIAL_DOWNLOAD_FAILED' }
     $errorText = ''
     try { Ensure-Node } catch { $errorText = $_.Exception.Message }
@@ -73,12 +73,12 @@ try {
     Check 'official fallback recovers when Scoop fails' ((Ensure-Node) -eq $realVersion)
 
     # Real capture path with native stderr and a failed exit, under PS 5.1 Stop.
-    $fn = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-NodeScoop' }, $true)
+    $fn = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-ScoopApp' }, $true)
     . ([scriptblock]::Create($fn.Extent.Text))
     Set-Content (Join-Path $work 'scoop.cmd') '@echo ORIGINAL_STDERR 1>&2
 @exit /b 17'.Replace('\r\n', "`r`n") -Encoding Ascii
     $env:Path = "$work;$env:Path"
-    $captured = Invoke-NodeScoop install
+    $captured = Invoke-ScoopApp install
     Check 'native stderr does not erase failure details' ($captured.ExitCode -eq 17 -and $captured.Output -match 'ORIGINAL_STDERR')
 }
 finally { $env:Path = $savedPath; $env:SCOOP = $savedScoop; Remove-Item $work -Recurse -Force }

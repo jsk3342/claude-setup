@@ -207,15 +207,15 @@ function Find-UsableNode {
 }
 
 # Keep Scoop's original messages instead of replacing them with 'node not found'.
-function Invoke-NodeScoop {
-    param([ValidateSet('install', 'reset')][string]$Action)
+function Invoke-ScoopApp {
+    param([ValidateSet('install', 'reset')][string]$Action, [ValidateSet('nodejs', 'git')][string]$App = 'nodejs')
     $lines = New-Object 'System.Collections.Generic.List[string]'
     $code = & {
         $ErrorActionPreference = 'Continue'
         $savedExitCode = $global:LASTEXITCODE
         $global:LASTEXITCODE = 0
         try {
-            & scoop $Action nodejs *>&1 | ForEach-Object {
+            & scoop $Action $App *>&1 | ForEach-Object {
                 $text = [string]$_
                 $lines.Add($text)
                 Write-Host $text
@@ -275,14 +275,14 @@ function Ensure-Node {
         return $node.Version
     }
     Write-Host "  Node.js를 설치합니다..."
-    $install = Invoke-NodeScoop install
+    $install = Invoke-ScoopApp install
     Refresh-Path
     $node = Find-UsableNode
     $repair = $null
     if (-not $node) {
         # Scoop may say 'already installed' even when current/shims are missing.
         Write-Host '  Node.js 실행 경로를 복구합니다...'
-        $repair = Invoke-NodeScoop reset
+        $repair = Invoke-ScoopApp reset
         Refresh-Path
         $node = Find-UsableNode
     }
@@ -307,6 +307,54 @@ function Ensure-Node {
     }
     Write-Ok "Node.js $($node.Version) 설치 및 실행 확인"
     return $node.Version
+}
+
+function Find-UsableGit {
+    $paths = @()
+    $command = Get-Command git -CommandType Application -ErrorAction SilentlyContinue
+    if ($command) { $paths += $command.Source }
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ }) {
+        $paths += Join-Path $root 'Git\cmd\git.exe'
+    }
+    $paths += Join-Path $env:LOCALAPPDATA 'Programs\Git\cmd\git.exe'
+    foreach ($root in @($env:SCOOP, (Join-Path $env:USERPROFILE 'scoop'), $env:SCOOP_GLOBAL) | Where-Object { $_ }) {
+        $paths += Join-Path $root 'apps\git\current\cmd\git.exe'
+    }
+    foreach ($path in ($paths | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        $version = & {
+            $ErrorActionPreference = 'Continue'
+            try {
+                $text = (& $path --version 2>&1) -join ''
+                if ($LASTEXITCODE -eq 0 -and $text -match '^git version \d+\.') { return $text.Trim() }
+            } catch { }
+        }
+        if ($version) { return [PSCustomObject]@{ Path = $path; Version = $version } }
+    }
+    return $null
+}
+
+function Ensure-Git {
+    Refresh-Path
+    $git = Find-UsableGit
+    if ($git) { Add-UserPathEntry (Split-Path $git.Path -Parent); Write-Skip $git.Version; return $git.Version }
+    $result = Invoke-ScoopApp install git
+    Refresh-Path
+    $git = Find-UsableGit
+    $wingetCode = 'not available'
+    if (-not $git -and (Test-Command winget)) {
+        Write-Host '  Scoop 대신 WinGet으로 Git을 사용자 계정에 설치합니다...'
+        & winget install --id Git.Git -e --source winget --scope user --silent --disable-interactivity --accept-package-agreements --accept-source-agreements
+        $wingetCode = $LASTEXITCODE
+        Refresh-Path
+        $git = Find-UsableGit
+    }
+    if (-not $git) {
+        Write-Fail "Git 실행 확인 실패. Scoop exit=$($result.ExitCode): $($result.Output) / WinGet exit=$wingetCode"
+    }
+    Add-UserPathEntry (Split-Path $git.Path -Parent)
+    Write-Ok "$($git.Version) 설치 및 실행 확인"
+    return $git.Version
 }
 
 function Get-ClaudeCodeVersion {
@@ -452,18 +500,7 @@ if ($null -ne $pyVer) {
 $step++
 Write-Step -Num $step -Total $total -Message "Git" -Reason "이후 작업 파일의 변경 내역을 관리하는 도구입니다."
 
-if (Test-Command "git") {
-    $gitVer = git --version
-    Write-Skip "$gitVer"
-} else {
-    Write-Host "  Git을 설치합니다..."
-    scoop install git
-
-    Refresh-Path
-
-    $gitVer = git --version
-    Write-Ok "$gitVer 설치 완료"
-}
+$gitVer = Ensure-Git
 
 # ── 5. Claude Code ──
 $step++
