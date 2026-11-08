@@ -93,7 +93,10 @@ jobs:
               $entries = @([System.Environment]::GetEnvironmentVariable("PATH", $scope) -split ";" | Where-Object { $_ })
               $kept = @($entries | Where-Object {
                   $entry = $_
-                  -not ($tools | Where-Object { Test-Path -LiteralPath (Join-Path $entry $_) })
+                  # Store Python aliases are not an installed Python runtime. Removing
+                  # all of WindowsApps also hides winget/wt, unlike a normal beginner PC.
+                  ($entry -like '*\Microsoft\WindowsApps') -or
+                    -not ($tools | Where-Object { Test-Path -LiteralPath (Join-Path $entry $_) })
               })
               [System.Environment]::SetEnvironmentVariable("PATH", ($kept -join ";"), $scope)
               Write-Host "$scope PATH: removed $($entries.Count - $kept.Count) entries"
