@@ -14,12 +14,24 @@ on:
       - usage-mode/**
       - tests/windows-failure-report.ps1
       - tests/windows-node-recovery.ps1
+      - tests/windows-node-official.ps1
       - .github/workflows/windows-beginner-path.yml
 
 permissions:
   contents: read
 
 jobs:
+  node-official:
+    runs-on: windows-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Official Node fallback with SHA256 verification
+        shell: powershell
+        run: .\tests\windows-node-official.ps1
+
   node-recovery:
     runs-on: windows-latest
     timeout-minutes: 5

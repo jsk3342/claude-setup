@@ -40,7 +40,7 @@ Set-Content -Path $driver -Encoding Ascii -Value @"
 # scenario here; windows-node-recovery.ps1 exercises the real filesystem discovery.
 `$ast = [Management.Automation.Language.Parser]::ParseInput(`$text, [ref]`$null, [ref]`$null)
 `$fn = `$ast.Find({ param(`$n) `$n -is [Management.Automation.Language.FunctionDefinitionAst] -and `$n.Name -eq 'Find-UsableNode' }, `$true)
-`$text = `$text.Replace(`$fn.Extent.Text, 'function Find-UsableNode { return `$null }')
+`$text = `$text.Replace(`$fn.Extent.Text, 'function Find-UsableNode { return `$null }; function Install-OfficialNode { throw ''TEST_OFFICIAL_DOWNLOAD_FAILED'' }')
 try { Invoke-Expression `$text ; Write-Output 'INSTALLER-RETURNED' }
 catch { Write-Output "CAUGHT=`$(`$_.Exception.Message)"; Write-Output 'INSTALLER-THREW' }
 Write-Output "PROGRESS-AFTER=`$ProgressPreference"

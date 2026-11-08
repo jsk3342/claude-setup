@@ -64,9 +64,13 @@ try {
 
     function Find-UsableNode { return $null }
     function Invoke-NodeScoop($Action) { return [PSCustomObject]@{ ExitCode = 23; Output = 'DOWNLOAD_FAILED original cause' } }
+    function Install-OfficialNode { throw 'OFFICIAL_DOWNLOAD_FAILED' }
     $errorText = ''
     try { Ensure-Node } catch { $errorText = $_.Exception.Message }
     Check 'failure preserves Scoop cause and exit status' ($errorText -match 'DOWNLOAD_FAILED' -and $errorText -match 'exit=23')
+
+    function Install-OfficialNode { return [PSCustomObject]@{ Path = $testNode; Version = $realVersion } }
+    Check 'official fallback recovers when Scoop fails' ((Ensure-Node) -eq $realVersion)
 
     # Real capture path with native stderr and a failed exit, under PS 5.1 Stop.
     $fn = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-NodeScoop' }, $true)

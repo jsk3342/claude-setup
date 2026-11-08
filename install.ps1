@@ -231,6 +231,41 @@ function Invoke-NodeScoop {
     return [PSCustomObject]@{ ExitCode = $code; Output = ($lines -join "`n") }
 }
 
+# Official ZIPs need only Windows' built-in ZIP extraction, not Scoop's 7zip dependency.
+function Install-OfficialNode {
+    $architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+    $arch = switch ($architecture) { 'ARM64' { 'arm64' } 'AMD64' { 'x64' } 'x86' { 'x86' } default { throw "Unsupported Node architecture: $architecture" } }
+    $releases = Invoke-RestMethod 'https://nodejs.org/dist/index.json' -TimeoutSec 30
+    $release = $releases | Where-Object { $_.lts -and $_.files -contains "win-$arch-zip" } | Select-Object -First 1
+    if (-not $release -or $release.version -notmatch '^v\d+\.\d+\.\d+$') { throw 'No supported official Node LTS release found.' }
+    $name = "node-$($release.version)-win-$arch"
+    $base = "https://nodejs.org/dist/$($release.version)"
+    $checksums = (Invoke-WebRequest "$base/SHASUMS256.txt" -UseBasicParsing -TimeoutSec 30).Content
+    $match = [regex]::Match([string]$checksums, ('(?m)^([a-fA-F0-9]{64})\s+\*?' + [regex]::Escape("$name.zip") + '\r?$'))
+    if (-not $match.Success) { throw 'Official Node ZIP checksum is missing.' }
+    $stage = Join-Path $env:TEMP ('claude-node-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $stage | Out-Null
+    try {
+        $zip = Join-Path $stage "$name.zip"
+        Invoke-WebRequest "$base/$name.zip" -OutFile $zip -UseBasicParsing -TimeoutSec 120
+        if ((Get-FileHash $zip -Algorithm SHA256).Hash -ne $match.Groups[1].Value) { throw 'Official Node ZIP checksum mismatch; nothing was installed.' }
+        Expand-Archive -LiteralPath $zip -DestinationPath $stage
+        $extracted = Join-Path $stage $name
+        $version = Get-NodeVersion (Join-Path $extracted 'node.exe')
+        if ($version -ne $release.version) { throw 'Official Node executable failed version verification.' }
+        $parent = Join-Path $env:LOCALAPPDATA 'Programs\CloseAI\Node'
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+        $destination = Join-Path $parent $name
+        if (Test-Path -LiteralPath $destination) {
+            # Keep an existing installation intact, including any user-added files.
+            $destination += '-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+        }
+        Move-Item -LiteralPath $extracted -Destination $destination
+        return [PSCustomObject]@{ Path = (Join-Path $destination 'node.exe'); Version = $version }
+    }
+    finally { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
 function Ensure-Node {
     Refresh-Path
     $node = Find-UsableNode
@@ -251,8 +286,14 @@ function Ensure-Node {
         Refresh-Path
         $node = Find-UsableNode
     }
+    $officialError = $null
     if (-not $node) {
-        $details = "Scoop install exit=$($install.ExitCode): $($install.Output)"
+        Write-Host '  Scoop 대신 Node 공식 배포본으로 설치합니다 (관리자 권한 불필요)...'
+        try { $node = Install-OfficialNode }
+        catch { $officialError = $_.Exception.Message }
+    }
+    if (-not $node) {
+        $details = "Official Node: $officialError / Scoop install exit=$($install.ExitCode): $($install.Output)"
         if ($repair) { $details += " / reset exit=$($repair.ExitCode): $($repair.Output)" }
         $details = $details -replace '\x1B\[[0-?]*[ -/]*[@-~]', ''
         $details = ($details -replace '\s+', ' ').Trim()
