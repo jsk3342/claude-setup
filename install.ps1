@@ -167,6 +167,105 @@ function Add-UserPathEntry {
     $env:PATH = (@($Path) + $processEntries) -join ";"
 }
 
+# A command name alone does not prove Node is usable (stale Scoop shims exist).
+function Get-NodeVersion {
+    param([string]$CommandPath)
+    if ([string]::IsNullOrWhiteSpace($CommandPath)) { return $null }
+    $check = & {
+        param($candidate)
+        $ErrorActionPreference = 'Continue'
+        try {
+            $output = (& $candidate --version 2>&1) -join ""
+            $code = $LASTEXITCODE
+        }
+        catch { return $null }
+        if ($code -eq 0 -and $output.Trim() -match '^v\d+\.\d+\.\d+$') { return $output.Trim() }
+    } $CommandPath
+    return $check
+}
+
+function Find-UsableNode {
+    $candidates = @()
+    $command = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+    if ($command) { $candidates += $command.Source }
+    $roots = @($env:SCOOP, (Join-Path $env:USERPROFILE 'scoop'), $env:SCOOP_GLOBAL)
+    if ($env:ProgramData) { $roots += Join-Path $env:ProgramData 'scoop' }
+    foreach ($root in ($roots | Where-Object { $_ } | Select-Object -Unique)) {
+        foreach ($app in 'nodejs', 'nodejs-lts') {
+            $candidates += Join-Path $root "apps\$app\current\node.exe"
+        }
+    }
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA) | Where-Object { $_ }) {
+        $candidates += Join-Path $root 'nodejs\node.exe'
+    }
+    foreach ($path in ($candidates | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        $version = Get-NodeVersion $path
+        if ($version) { return [PSCustomObject]@{ Path = $path; Version = $version } }
+    }
+    return $null
+}
+
+# Keep Scoop's original messages instead of replacing them with 'node not found'.
+function Invoke-NodeScoop {
+    param([ValidateSet('install', 'reset')][string]$Action)
+    $lines = New-Object 'System.Collections.Generic.List[string]'
+    $code = & {
+        $ErrorActionPreference = 'Continue'
+        $LASTEXITCODE = 0
+        try {
+            & scoop $Action nodejs *>&1 | ForEach-Object {
+                $text = [string]$_
+                $lines.Add($text)
+                Write-Host $text
+            }
+            return $LASTEXITCODE
+        }
+        catch {
+            $lines.Add($_.Exception.Message)
+            return 1
+        }
+    }
+    return [PSCustomObject]@{ ExitCode = $code; Output = ($lines -join "`n") }
+}
+
+function Ensure-Node {
+    Refresh-Path
+    $node = Find-UsableNode
+    if ($node) {
+        Add-UserPathEntry (Split-Path $node.Path -Parent)
+        Write-Skip "Node.js $($node.Version)"
+        return $node.Version
+    }
+    Write-Host "  Node.js를 설치합니다..."
+    $install = Invoke-NodeScoop install
+    Refresh-Path
+    $node = Find-UsableNode
+    $repair = $null
+    if (-not $node) {
+        # Scoop may say 'already installed' even when current/shims are missing.
+        Write-Host '  Node.js 실행 경로를 복구합니다...'
+        $repair = Invoke-NodeScoop reset
+        Refresh-Path
+        $node = Find-UsableNode
+    }
+    if (-not $node) {
+        $details = "Scoop install exit=$($install.ExitCode): $($install.Output)"
+        if ($repair) { $details += " / reset exit=$($repair.ExitCode): $($repair.Output)" }
+        $details = $details -replace '\x1B\[[0-?]*[ -/]*[@-~]', ''
+        $details = ($details -replace '\s+', ' ').Trim()
+        if ($details.Length -gt 600) { $details = $details.Substring(0, 600) }
+        Write-Fail "Node.js 실행 확인 실패. 설치 또는 경로 복구가 끝나지 않았습니다. $details"
+    }
+    Add-UserPathEntry (Split-Path $node.Path -Parent)
+    $command = Get-Command node -CommandType Application -ErrorAction SilentlyContinue
+    if (-not $command -or -not (Get-NodeVersion $command.Source)) {
+        Write-Fail 'Node.js 파일은 있지만 node 명령의 실행 경로 등록을 확인하지 못했습니다.'
+    }
+    Write-Ok "Node.js $($node.Version) 설치 및 실행 확인"
+    return $node.Version
+}
+
 function Get-ClaudeCodeVersion {
     param([string]$CommandPath)
 
@@ -284,18 +383,7 @@ if (Test-Command "scoop") {
 $step++
 Write-Step -Num $step -Total $total -Message "Node.js" -Reason "앱과 사용량 표시 같은 추가 도구를 실행할 때 씁니다."
 
-if (Test-Command "node") {
-    $nodeVer = node -v
-    Write-Skip "Node.js $nodeVer"
-} else {
-    Write-Host "  Node.js를 설치합니다..."
-    scoop install nodejs
-
-    Refresh-Path
-
-    $nodeVer = node -v
-    Write-Ok "Node.js $nodeVer 설치 완료"
-}
+$nodeVer = Ensure-Node
 
 # ── 3. Python 3 ──
 $step++

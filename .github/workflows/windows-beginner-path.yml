@@ -13,12 +13,24 @@ on:
       - install.ps1
       - usage-mode/**
       - tests/windows-failure-report.ps1
+      - tests/windows-node-recovery.ps1
       - .github/workflows/windows-beginner-path.yml
 
 permissions:
   contents: read
 
 jobs:
+  node-recovery:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Recover missing Node PATH and preserve installation failures
+        shell: powershell
+        run: .\tests\windows-node-recovery.ps1
+
   # A separate machine: this job hides tools and fakes scoop, which must not touch the real install path below.
   failure-report:
     runs-on: windows-latest

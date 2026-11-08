@@ -35,7 +35,13 @@ $installer = Join-Path $Root 'install.ps1'
 # Same way customers run it: the script text through Invoke-Expression, in a window that stays open.
 Set-Content -Path $driver -Encoding Ascii -Value @"
 `$ProgressPreference = 'Inquire'
-try { Invoke-Expression ([IO.File]::ReadAllText('$installer', [Text.Encoding]::UTF8)) ; Write-Output 'INSTALLER-RETURNED' }
+`$text = [IO.File]::ReadAllText('$installer', [Text.Encoding]::UTF8)
+# The disposable runner has Node binaries outside PATH too. Force the missing-binary
+# scenario here; windows-node-recovery.ps1 exercises the real filesystem discovery.
+`$ast = [Management.Automation.Language.Parser]::ParseInput(`$text, [ref]`$null, [ref]`$null)
+`$fn = `$ast.Find({ param(`$n) `$n -is [Management.Automation.Language.FunctionDefinitionAst] -and `$n.Name -eq 'Find-UsableNode' }, `$true)
+`$text = `$text.Replace(`$fn.Extent.Text, 'function Find-UsableNode { return `$null }')
+try { Invoke-Expression `$text ; Write-Output 'INSTALLER-RETURNED' }
 catch { Write-Output "CAUGHT=`$(`$_.Exception.Message)"; Write-Output 'INSTALLER-THREW' }
 Write-Output "PROGRESS-AFTER=`$ProgressPreference"
 Write-Output '$marker'
