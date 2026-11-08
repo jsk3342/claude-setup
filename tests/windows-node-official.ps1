@@ -11,8 +11,8 @@ foreach ($name in 'Get-NodeVersion', 'Install-OfficialNode') {
 $node = Install-OfficialNode
 if (-not $node.Path.StartsWith((Join-Path $env:LOCALAPPDATA 'Programs\CloseAI\Node'))) { throw 'Node was not installed in the user folder.' }
 if ((Get-NodeVersion $node.Path) -ne $node.Version) { throw 'Installed binary did not pass verification.' }
-& $node.Path -e 'console.log("NODE_OFFICIAL_RUN_OK")'
-if ($LASTEXITCODE -ne 0) { throw 'Installed Node could not execute JavaScript.' }
+$result = & $node.Path -p '1+1'
+if ($LASTEXITCODE -ne 0 -or $result -ne '2') { throw 'Installed Node could not execute JavaScript.' }
 # A corrupted archive must be rejected before extraction or installation.
 $realDownload = Get-Command Invoke-WebRequest
 function Invoke-WebRequest {
