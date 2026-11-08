@@ -37,3 +37,6 @@ try {
 }
 finally { $env:Path = $saved }
 Write-Host 'git-recovery-tests: OK'
+
+# The last case deliberately sets a failed native status; assertions above already checked it.
+$global:LASTEXITCODE = 0
