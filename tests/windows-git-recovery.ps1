@@ -21,8 +21,9 @@ try {
     Check 'real Git can be recovered outside PATH' ($null -ne $git -and $git.Version -match '^git version')
     function Invoke-ScoopApp($Action, $App) { throw 'Should not reinstall working Git' }
     Check 'working Git repairs PATH without reinstalling' ((Ensure-Git) -eq $git.Version -and $script:addedPath -eq (Split-Path $git.Path -Parent))
+    $script:testGit = $git
     $script:findCalls = 0
-    function Find-UsableGit { $script:findCalls++; if ($script:findCalls -ge 3) { return $git }; return $null }
+    function Find-UsableGit { $script:findCalls++; if ($script:findCalls -ge 3) { return $script:testGit }; return $null }
     function Invoke-ScoopApp($Action, $App) { Check 'Scoop targets only Git' ($Action -eq 'install' -and $App -eq 'git'); return [PSCustomObject]@{ ExitCode = 1; Output = '7zip download failed' } }
     function Test-Command($Command) { return $Command -eq 'winget' }
     function winget { $script:wingetArgs = $args -join ' '; Write-Output 'WinGet progress'; $global:LASTEXITCODE = 0 }
