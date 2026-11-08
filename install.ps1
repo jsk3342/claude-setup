@@ -212,19 +212,21 @@ function Invoke-NodeScoop {
     $lines = New-Object 'System.Collections.Generic.List[string]'
     $code = & {
         $ErrorActionPreference = 'Continue'
-        $LASTEXITCODE = 0
+        $savedExitCode = $global:LASTEXITCODE
+        $global:LASTEXITCODE = 0
         try {
             & scoop $Action nodejs *>&1 | ForEach-Object {
                 $text = [string]$_
                 $lines.Add($text)
                 Write-Host $text
             }
-            return $LASTEXITCODE
+            return $global:LASTEXITCODE
         }
         catch {
             $lines.Add($_.Exception.Message)
             return 1
         }
+        finally { $global:LASTEXITCODE = $savedExitCode }
     }
     return [PSCustomObject]@{ ExitCode = $code; Output = ($lines -join "`n") }
 }

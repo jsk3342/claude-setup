@@ -84,6 +84,16 @@ jobs:
               Write-Host "$scope PATH: removed $($entries.Count - $kept.Count) entries"
           }
 
+      # Discovery must not rescue preinstalled Node in this clean-install job.
+      # The recovery job separately proves that existing binaries are reused.
+      - name: Hide the preinstalled standard Node directory
+        shell: powershell
+        run: |
+          foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA) | Where-Object { $_ }) {
+            $path = Join-Path $root 'nodejs'
+            if (Test-Path -LiteralPath $path) { Move-Item -LiteralPath $path -Destination "$path-preinstalled-hidden" }
+          }
+
       - name: Run README command as administrator
         shell: powershell
         run: |
