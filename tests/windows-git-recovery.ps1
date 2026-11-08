@@ -25,7 +25,7 @@ try {
     function Find-UsableGit { $script:findCalls++; if ($script:findCalls -ge 3) { return $git }; return $null }
     function Invoke-ScoopApp($Action, $App) { Check 'Scoop targets only Git' ($Action -eq 'install' -and $App -eq 'git'); return [PSCustomObject]@{ ExitCode = 1; Output = '7zip download failed' } }
     function Test-Command($Command) { return $Command -eq 'winget' }
-    function winget { $script:wingetArgs = $args -join ' '; $global:LASTEXITCODE = 0 }
+    function winget { $script:wingetArgs = $args -join ' '; Write-Output 'WinGet progress'; $global:LASTEXITCODE = 0 }
     Check 'failed Scoop installation falls back and re-verifies Git' ((Ensure-Git) -eq $git.Version)
     Check 'WinGet is user-scoped and noninteractive' ($script:wingetArgs -match '--scope user' -and $script:wingetArgs -match '--disable-interactivity' -and $script:wingetArgs -match 'Git.Git')
     function Find-UsableGit { return $null }

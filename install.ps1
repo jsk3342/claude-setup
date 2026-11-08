@@ -344,8 +344,14 @@ function Ensure-Git {
     $wingetCode = 'not available'
     if (-not $git -and (Test-Command winget)) {
         Write-Host '  Scoop 대신 WinGet으로 Git을 사용자 계정에 설치합니다...'
-        & winget install --id Git.Git -e --source winget --scope user --silent --disable-interactivity --accept-package-agreements --accept-source-agreements
-        $wingetCode = $LASTEXITCODE
+        $wingetCode = & {
+            $ErrorActionPreference = 'Continue'
+            try {
+                & winget install --id Git.Git -e --source winget --scope user --silent --disable-interactivity --accept-package-agreements --accept-source-agreements *>&1 | ForEach-Object { Write-Host ([string]$_) }
+                return $global:LASTEXITCODE
+            }
+            catch { Write-Host $_.Exception.Message; return 1 }
+        }
         Refresh-Path
         $git = Find-UsableGit
     }
