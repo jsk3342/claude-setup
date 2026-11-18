@@ -43,7 +43,7 @@ function Start-StepHeartbeat {
 
 # 실패하면 고객이 여러 번 나눠 붙여넣지 않도록 진단에 필요한 내용을 한 덩어리로 보여 준다.
 function Write-FailureReport {
-    param([string]$Message)
+    param([string]$Message, [string]$Step = $script:currentStepLabel, [string]$Result = '중단됨')
     $safeMessage = $Message
     if ($env:USERPROFILE) { $safeMessage = $safeMessage.Replace($env:USERPROFILE, '~') }
     $safeMessage = ($safeMessage -replace '\s+', ' ').Trim()
@@ -53,8 +53,8 @@ function Write-FailureReport {
     $report = @(
         '---------- 설치 실패 보고 시작 ----------'
         '설치기: claude-setup (윈도우)'
-        '결과: 중단됨'
-        "단계: $script:currentStepLabel"
+        "결과: $Result"
+        "단계: $Step"
         "오류: $safeMessage"
         "걸린 시간: $([int]$script:installStopwatch.Elapsed.TotalSeconds)초"
         "OS: Windows $([System.Environment]::OSVersion.Version)"
@@ -139,12 +139,58 @@ function Get-PythonVersion {
             }
         } $candidate
 
-        if ($check.ExitCode -eq 0 -and $check.Output -match '^Python\s+\d+(?:\.\d+)+') {
+        if ($check.ExitCode -eq 0 -and $check.Output -match '^Python\s+3\.\d+') {
             return $check.Output.Trim()
         }
     }
 
     return $null
+}
+
+# Python은 첫 대화에 필요하지 않다. 두 설치 경로 모두 실패하면 진단만 반환한다.
+function Install-OptionalPython {
+    $version = Get-PythonVersion
+    if ($version) {
+        Write-Skip $version
+        return @{ Version = $version }
+    }
+
+    Write-Host "  Python 3를 설치합니다..."
+    $install = Invoke-ScoopApp install python
+    Refresh-Path
+    $version = Get-PythonVersion
+    if ($version) {
+        Write-Ok "$version 실행 확인"
+        return @{ Version = $version }
+    }
+
+    $tail = (($install.Output -split '\r?\n' | Where-Object { $_.Trim() } | Select-Object -Last 4) -join ' / ')
+    if ($tail.Length -gt 350) { $tail = $tail.Substring($tail.Length - 350) }
+    $wingetStatus = '사용할 수 없음'
+    if (Test-Command winget) {
+        Write-Host "  Scoop에서 Python 실행을 확인하지 못했습니다. WinGet으로 공식 사용자용 설치 파일을 시도합니다."
+        $wingetStatus = & {
+            $ErrorActionPreference = 'Continue'
+            try {
+                & winget install --id Python.Python.3.15 --exact --source winget --scope user --silent --disable-interactivity --accept-package-agreements --accept-source-agreements *>&1 | ForEach-Object { Write-Host ([string]$_) }
+                return $LASTEXITCODE
+            } catch { return $_.Exception.Message }
+        }
+        Refresh-Path
+        $version = Get-PythonVersion
+        if ($version) {
+            Write-Ok "$version 실행 확인 (WinGet)"
+            return @{ Version = $version }
+        }
+    }
+
+    $scoopState = try {
+        $listing = scoop list python 2>$null | Out-String
+        ($listing -split '\r?\n' | Where-Object { $_ -match '^\s*python\s' } | Select-Object -First 1)
+    } catch { $_.Exception.Message }
+    if (-not $scoopState) { $scoopState = '목록에서 확인 불가' }
+    $path = (Get-Command python -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+    return @{ Detail = "Scoop exit=$($install.ExitCode), 목록=$scoopState / WinGet=$wingetStatus / python 경로=$path / Scoop 마지막 출력=$tail" }
 }
 
 function Refresh-Path {
@@ -208,7 +254,7 @@ function Find-UsableNode {
 
 # Keep Scoop's original messages instead of replacing them with 'node not found'.
 function Invoke-ScoopApp {
-    param([ValidateSet('install', 'reset')][string]$Action, [ValidateSet('nodejs', 'git')][string]$App = 'nodejs')
+    param([ValidateSet('install', 'reset')][string]$Action, [ValidateSet('nodejs', 'git', 'python')][string]$App = 'nodejs')
     $lines = New-Object 'System.Collections.Generic.List[string]'
     $code = & {
         $ErrorActionPreference = 'Continue'
@@ -486,20 +532,13 @@ $nodeVer = Ensure-Node
 $step++
 Write-Step -Num $step -Total $total -Message "Python 3" -Reason "이후 자료 정리와 자동화 작업에 씁니다. 뉴스 대화 자체의 필수 조건은 아닙니다."
 
-$pyVer = Get-PythonVersion
-if ($null -ne $pyVer) {
-    Write-Skip "$pyVer"
-} else {
-    Write-Host "  Python 3를 설치합니다..."
-    scoop install python
-
-    Refresh-Path
-
-    $pyVer = Get-PythonVersion
-    if ($null -eq $pyVer) {
-        Write-Fail "Python 3 설치 후 실행 확인에 실패했습니다."
-    }
-    Write-Ok "$pyVer 설치 완료"
+try {
+    $pythonResult = Install-OptionalPython
+} catch {
+    $pythonResult = @{ Detail = $_.Exception.Message }
+}
+if (-not $pythonResult.Version) {
+    Write-Host "  Python 실행을 확인하지 못했습니다. Claude 설치를 계속합니다." -ForegroundColor Yellow
 }
 
 # ── 4. Git ──
@@ -665,7 +704,11 @@ Write-Host ""
 Write-Host "  설치된 항목:" -ForegroundColor White
 Write-Host "  ✓ Scoop" -ForegroundColor Green
 Write-Host "  ✓ Node.js   $nodeVer" -ForegroundColor Green
-Write-Host "  ✓ Python    $pyVer" -ForegroundColor Green
+if ($pythonResult.Version) {
+    Write-Host "  ✓ Python    $($pythonResult.Version)" -ForegroundColor Green
+} else {
+    Write-Host "  ! Python 실행 미확인 · 나중에 설치 가능" -ForegroundColor Yellow
+}
 Write-Host "  ✓ Git       $gitVer" -ForegroundColor Green
 Write-Host "  ✓ Claude Code $claudeVer" -ForegroundColor Green
 Write-Host "  ✓ Windows Terminal (기존 꾸미기 유지)" -ForegroundColor Green
@@ -673,7 +716,15 @@ Write-Host "  ✓ 사용량 모드" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Blue
-Write-Host "  ✅ 설치가 모두 완료되었습니다!" -ForegroundColor Green
+if ($pythonResult.Version) {
+    Write-Host "  ✅ 설치가 모두 완료되었습니다!" -ForegroundColor Green
+} else {
+    Write-Host "  Claude 사용 준비 완료 · Python 추가 확인 필요" -ForegroundColor Yellow
+    Write-FailureReport -Step '3/7 Python 3' -Result 'Claude 실행 확인 완료, Python 실행 미확인' -Message $pythonResult.Detail
+    Write-Host "  Python도 필요하면 Claude를 열고 아래처럼 요청하세요."
+    Write-Host "  '윈도우에서 Python 3 설치를 마치고 싶어. 이 보고서를 보고 기존 설치 상태부터 확인해 줘.'"
+    Write-Host "  요청과 함께 위 보고서를 붙여넣으세요."
+}
 Write-Host "========================================" -ForegroundColor Blue
 
 Write-Host ""
@@ -700,7 +751,7 @@ Write-Host ""
 catch {
     Stop-StepHeartbeat
     Write-FailureReport -Message $_.Exception.Message
-    throw "설치를 중단했습니다. 위의 실패 보고를 설치 도우미에 붙여넣어 주세요."
+    throw "$script:currentStepLabel 단계에서 설치를 중단했습니다. 위의 실패 보고를 설치 도우미에 붙여넣어 주세요."
 }
 finally {
     Stop-StepHeartbeat
