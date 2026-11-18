@@ -764,12 +764,13 @@ if [[ -n "$iterm_app" ]]; then
 else
   echo "  iTerm2 수동 설치 전에도 새 기본 터미널에서 Claude Code를 실행할 수 있습니다."
 fi
-echo -e "  ${BOLD}새 터미널 창에서${NC} ${YELLOW}claude${NC} 를 입력하세요."
-echo "  처음 실행하면 영어 화면이 몇 개 나옵니다. 로그인 방법은 1번을 고르세요."
-echo '  "Quick safety check"에서는 그대로 Enter를 누르면 꺼지니, 아래 화살표로 Yes를 고른 뒤 Enter를 누르세요.'
-echo "  로그인 후 Claude 대화 화면에: 오늘 뉴스 정리해서 알려줘"
-echo "  설치 명령은 터미널에, 이 요청은 Claude 대화 화면에 입력합니다."
-echo "  다음에 사용할 때도 iTerm2를 열고 claude를 입력하면 됩니다. 다시 설치하지 않습니다."
+echo "  새 터미널에서 쓸 작업 폴더가 없다면 아래 한 줄로 폴더를 만들고 Claude를 여세요."
+echo '  mkdir -p ~/claude-work && cd ~/claude-work && claude'
+echo "  로그인 선택 화면이 나오면 Claude 구독 계정으로 로그인하세요."
+echo "  Quick safety check가 나오면 화면의 경로를 확인하세요. 내가 사용할 작업 폴더일 때만 Yes, I trust this folder를 선택하세요."
+echo "  홈 폴더 전체(/Users/내이름)나 모르는 폴더라면 No, exit를 고른 뒤 새 터미널에서 위 한 줄을 실행하세요."
+echo "  로그인 화면 없이 Claude의 ❯ 입력칸이 바로 보이면 ‘안녕’을 입력하고 Enter를 누르세요. 답이 오면 첫 대화까지 완료입니다."
+echo "  다음에도 같은 작업 폴더에서 claude를 실행하면 됩니다."
 echo ""
 echo -e "  ${BOLD}로그인에서 막힐 때:${NC}"
 echo -e "  OAuth 400 또는 코드 붙여넣기 문제가 나면 ${YELLOW}claude auth login${NC} 으로 다시 로그인하세요."
