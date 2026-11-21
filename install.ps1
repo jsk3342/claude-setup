@@ -729,14 +729,15 @@ Write-Host "========================================" -ForegroundColor Blue
 
 Write-Host ""
 Write-Host "  다음 단계:" -ForegroundColor White
-Write-Host "  새 Windows Terminal을 열고 " -NoNewline
-Write-Host "claude" -ForegroundColor Yellow -NoNewline
-Write-Host " 를 입력하세요."
+Write-Host "  새 Windows Terminal을 열고 아래 한 줄을 붙여넣으세요. 작업 폴더를 만들고 그 안에서 Claude를 엽니다."
+Write-Host '  mkdir $env:USERPROFILE\claude-work -Force; cd $env:USERPROFILE\claude-work; claude' -ForegroundColor Yellow
 Write-Host "  처음 실행하면 영어 화면이 몇 개 나옵니다. 로그인 방법은 1번을 고르세요."
-Write-Host '  "Quick safety check"에서는 그대로 Enter를 누르면 꺼지니, 아래 화살표로 Yes를 고른 뒤 Enter를 누르세요.'
+Write-Host "  Quick safety check가 나오면 화면의 경로가 claude-work로 끝나는지 확인하세요."
+Write-Host "  맞으면 아래 화살표로 Yes, I trust this folder를 고른 뒤 Enter를 누르세요. 그대로 Enter를 누르면 꺼집니다."
+Write-Host "  경로가 C:\Users\내이름 처럼 홈 폴더 전체라면 No, exit를 고르고 위 한 줄을 다시 붙여넣으세요."
 Write-Host "  로그인 후 Claude 대화 화면에: 오늘 뉴스 정리해서 알려줘"
 Write-Host "  설치 명령은 PowerShell에, 이 요청은 Claude 대화 화면에 입력합니다."
-Write-Host "  다음에도 Windows Terminal을 열고 claude를 입력하면 됩니다. 다시 설치하지 않습니다."
+Write-Host "  다음에도 Windows Terminal을 열고 위 한 줄을 붙여넣으면 됩니다. 다시 설치하지 않습니다."
 Write-Host ""
 Write-Host "  로그인에서 막힐 때:" -ForegroundColor White
 Write-Host "  OAuth 400 또는 코드 붙여넣기 문제가 나면 " -NoNewline
